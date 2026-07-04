@@ -12,12 +12,18 @@ SRCS := $(wildcard *.cpp)
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean run debug
+.PHONY: all build niniBUS clean run debug
 
-all: $(TARGET)
+all: build
 
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+# build produces the executable and keeps object/dependency files
+build: $(OBJS)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $^ $(LDFLAGS)
+
+# make niniBUS will build then remove intermediate meta files, leaving only the executable
+niniBUS: build
+	@echo "Removing meta files (.o .d), keeping $(TARGET)"
+	rm -f $(OBJS) $(DEPS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
