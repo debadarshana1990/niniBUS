@@ -1,69 +1,67 @@
 #include "niniBUS.h"
 
 // Define static member
-uint32_t niniBUS::dataStruct_idx = 0;
+uint32_t niniBUS::lanes_idx_ = 0;
 
-bool niniBUS::push_msg(msg message)
+bool niniBUS::publish(lane_t laneID, std::string message)
 {
-    //get the ID first
-    uint32_t msgID = message.msgID;
     ///check if present in the map
-    auto it = dataStruct_map.find(msgID);
-    if(it == dataStruct_map.end())
+    auto it = lane_map_.find(laneID);
+    if(it == lane_map_.end())
     {
-        //we are processing a new msg. this is costly
-        //need to create a new object for this msgD
-        niniMSG *newMSG = new niniMSG(msgID);
-        dataStruct_map[msgID] = dataStruct_idx++;
-        dataStruct.push_back(newMSG); //everything  is here
+        //we are processing a new LaneID. this is costly
+        //need to create a new object for this LaneID
+        Lane *newLane = new Lane(laneID);
+        lane_map_[laneID] = lanes_idx_++;
+        lanes_.push_back(newLane); //everything  is here
     }
 
-        //we have already created the msgID object. just push the content
-    uint32_t idx = dataStruct_map[msgID];
-    dataStruct[idx]->content.push_back(message.content);
+        //we have already created the LaneID object. just push the content
+    uint32_t idx = lane_map_[laneID];
+    lanes_[idx]->content.push_back(message);
 
     return true;
 }
 /* subscribe*/
-bool niniBUS::subscribe(uint32_t msgID)
+bool niniBUS::subscribe(lane_t laneID)
 {
-    // Check if the message ID exists
-    auto it = dataStruct_map.find(msgID);
-    if (it == dataStruct_map.end())
+    // Check if the lane ID exists
+    auto it = lane_map_.find(laneID);
+    if (it == lane_map_.end())
     {
-        cerr << "future subscribing at the moment no msg having mSG ID " << msgID <<endl;
-        niniMSG *newMSG = new niniMSG(msgID);
-        dataStruct_map[msgID] = dataStruct_idx++;
-        dataStruct.push_back(newMSG); //everything  is here
-        newMSG->num_receivers++;
+        Lane *newLane = new Lane(laneID);
+        lane_map_[laneID] = lanes_idx_++;
+        lanes_.push_back(newLane); //everything  is here
+        newLane->num_receivers++;
     }
 
     return true;
 }
 
 /* pull message is interesting */
-bool niniBUS::pull_msg(msg& message)
+bool niniBUS::receive(lane_t laneID, std::string& message)
 {
-    //check if the msgID is present
-    auto it = dataStruct_map.find(message.msgID);
-    if (it == dataStruct_map.end())
+    message.clear();
+    //check if the laneID is present
+    auto it = lane_map_.find(laneID);
+    if (it == lane_map_.end())
     {
-        cerr << "Message ID not found. Subscribing for future messages." << endl;
-        subscribe(message.msgID);
+        std::cerr << "Lane ID not found. Subscribing for future messages." << std::endl;
+        subscribe(laneID);
         return false;
     }
 
     // Get the message object
-    niniMSG* msgObj = dataStruct[it->second];
-    if (msgObj->content.empty())
+    Lane* laneObj = lanes_[it->second];
+    if (laneObj->content.empty())
     {
-        cerr << "No content available for message ID " << message.msgID << endl;
+        std::cerr << "No content available for lane ID " << laneID << std::endl;
         return false;
     }
 
     // Pull the latest content
-    message.content = msgObj->content.front();
-    msgObj->content.pop_front();
+    message = laneObj->content.front();
+    laneObj->content.pop_front();
 
     return true;
 }

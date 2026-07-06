@@ -7,56 +7,46 @@
 #include <unordered_map>
 #include <deque>
 
-using namespace std;
-typedef enum
-{
-    LOCAL_SOCKET = 0, //default 
-    IPC,
-    THREAD,
-} interface;
-typedef struct msg
-{
-    uint32_t msgID;
-    string content;
-}msg;
-class niniMSG
+using lane_t = uint32_t;
+
+class Lane
 {
 public:
     // Message structure definition
-    uint32_t msgID;
-    deque<string> content;
+    lane_t laneID;
+    std::deque<std::string> content;
     // Add more fields as needed
     uint32_t num_receivers; // number of receivers
 
-    niniMSG(uint32_t id) : msgID(id), num_receivers(1)
+    Lane(lane_t id) : laneID(id), num_receivers(1)
     {
-        cout<<"msgID: "<<msgID<<" created"<<endl;
-        cout<<"num_receivers: "<<num_receivers<<endl;
+        //std::cout<<"lane: "<<laneID<<" created"<<std::endl;
+        //std::cout<<"num_receivers: "<<num_receivers<<std::endl;
     };
-    niniMSG(const niniMSG& other) = default;
-    niniMSG& operator=(const niniMSG& other) = delete; //no copy or move or assignment allowed
-    ~niniMSG()
+    Lane(const Lane& other) = default;
+    Lane& operator=(const Lane& other) = delete; //no copy or move or assignment allowed
+    ~Lane()
     {
-        cout<<"msgID: "<<msgID<<" destroyed"<<endl;
+        //std::cout<<"lane: "<<laneID<<" destroyed"<<std::endl;
     }
 };
 class niniBUS
 {
 private:
-    vector<niniMSG*> dataStruct;
-    static uint32_t dataStruct_idx; //hold the next new publisher idx 
-    unordered_map<uint32_t, uint32_t > dataStruct_map; // map for msg iD, its idx 
+    std::vector<Lane*> lanes_;
+    static uint32_t lanes_idx_; //hold the next new publisher idx
+    std::unordered_map<uint32_t, uint32_t > lane_map_; // map for msg iD, its idx
 
 public:
     niniBUS() = default;
     ~niniBUS()
     {
-        cout<<"Are You Sure You Want To Destroy The Message Bus?"<<endl;
-        cout<<"All messages will be lost."<<endl;
-        cout<<"Be a good Human. World is enough for everyone."<<endl;
+        std::cout<<"Are You Sure You Want To Destroy The Message Bus?"<<std::endl;
+        std::cout<<"All messages will be lost."<<std::endl;
+        std::cout<<"Be a good Human. World is enough for everyone."<<std::endl;
     }
-    bool push_msg(msg message);
-    bool pull_msg(msg& message);
-    bool subscribe(uint32_t msgID);
+    bool publish(lane_t,std::string message);
+    bool receive(lane_t,std::string& message);
+    bool subscribe(lane_t LaneID);
 
 };
