@@ -8,7 +8,6 @@ int main()
     std::cout << "Welcome to niniBUS" << std::endl;
     niniBUS bus;
 
-    // Start two consumers (run 60s each, poll every 2s)
     bus.subscribe(1);
     bus.subscribe(2);
     bus.publish(1, "Hello from producer 1");
@@ -23,5 +22,4 @@ int main()
 
     return 0;
 }
-
 

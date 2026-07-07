@@ -1,89 +1,77 @@
 # niniBUS Design
 
-`niniBUS` is a small in-process message bus. It groups string messages by a numeric
-lane ID and lets callers publish messages to a lane, subscribe to a lane, and
-receive queued messages from a lane.
+`niniBUS` is a small in-process message bus. It stores string messages by
+numeric lane ID and lets callers publish to, subscribe to, and receive from
+those lanes.
 
-The current implementation is intentionally simple: every lane owns one FIFO
-queue, and every `receive()` call removes one message from that queue.
+The current implementation is intentionally minimal. Each lane owns one FIFO
+message queue, and `receive()` removes one message from that queue.
 
 ## Source Files
 
-- `niniBUS.h` declares the public API and the internal `Lane` data container.
+- `niniBUS.h` declares the public API and the internal `Lane` container.
 - `niniBUS.cpp` implements lane creation, publishing, subscribing, and receiving.
-- `main.cpp` demonstrates basic single-threaded usage.
+- `Makefile` builds `niniBUS.cpp` into the static library `libniniBUS.a`.
+- `example/main.cpp` demonstrates single-threaded usage.
+- `example/Makefile` builds the example executable and links it against
+  `../libniniBUS.a`.
 
-## Core Types
-
-### `lane_t`
-
-`lane_t` is an alias for `uint32_t`.
-
-It identifies a logical message lane:
+## Public API
 
 ```cpp
 using lane_t = uint32_t;
-```
 
-### `Lane`
-
-`Lane` stores all queued messages for one lane.
-
-Fields:
-
-- `laneID`: the numeric lane identifier.
-- `content`: a `std::deque<std::string>` that stores pending messages.
-- `num_receivers`: a receiver count field. It is present in the data model, but
-  the current implementation does not consistently maintain or use it for
-  delivery behavior.
-
-Construction prints debug output showing the lane ID and receiver count.
-Destruction prints debug output for the lane.
-
-Copy construction is defaulted, but assignment is deleted.
-
-### `niniBUS`
-
-`niniBUS` owns the lane registry.
-
-Private fields:
-
-- `std::vector<Lane*> lanes_`
-  - Stores pointers to allocated `Lane` objects.
-- `static uint32_t lanes_idx_`
-  - Monotonically increases when new lanes are created.
-  - Used as the index assigned to newly created lanes.
-- `std::unordered_map<uint32_t, uint32_t> lane_map_`
-  - Maps `laneID` to an index in `lanes_`.
-
-Public API:
-
-```cpp
 bool publish(lane_t laneID, std::string message);
 bool receive(lane_t laneID, std::string& message);
 bool subscribe(lane_t laneID);
 ```
 
+`lane_t` identifies a logical message lane.
+
+## Core Data Model
+
+### `Lane`
+
+`Lane` stores queued messages for one lane.
+
+Fields:
+
+- `laneID`: the numeric lane identifier.
+- `content`: a `std::deque<std::string>` containing pending messages.
+
+`Lane` has a defaulted copy constructor and a deleted assignment operator.
+The destructor currently performs no cleanup or logging.
+
+### `niniBUS`
+
+`niniBUS` stores lane ownership in:
+
+```cpp
+std::unordered_map<uint32_t, Lane*> lane_map_;
+```
+
+The map key is the lane ID. The map value is a raw pointer to the `Lane` object
+for that lane.
+
+Older vector/index fields are commented out in the header. The active
+implementation no longer uses a vector of lanes or a static lane index.
+
 ## Lane Creation
 
 Lanes are created lazily.
 
-A lane can be created by either:
+A lane can be created by:
 
-- `publish(laneID, message)` when publishing to a lane for the first time.
-- `subscribe(laneID)` when subscribing to a lane for the first time.
-- `receive(laneID, message)` indirectly, when receiving from an unknown lane.
+- `publish(laneID, message)` when publishing to a missing lane.
+- `subscribe(laneID)` when subscribing to a missing lane.
+- `receive(laneID, message)` indirectly, when receiving from a missing lane.
 
 Creation flow:
 
-1. Look up `laneID` in `lane_map_`.
-2. If the lane does not exist, allocate `new Lane(laneID)`.
-3. Store the current `lanes_idx_` in `lane_map_[laneID]`.
-4. Increment `lanes_idx_`.
-5. Push the new `Lane*` into `lanes_`.
-
-The map and vector must stay synchronized. For every entry in `lane_map_`, the
-mapped index is expected to point to the matching `Lane*` in `lanes_`.
+1. Search `lane_map_` for `laneID`.
+2. If missing, allocate `new Lane(laneID)`.
+3. Insert the pointer into `lane_map_`.
+4. Use the stored `Lane*` for later operations.
 
 ## Publish Flow
 
@@ -91,20 +79,18 @@ mapped index is expected to point to the matching `Lane*` in `lanes_`.
 
 Algorithm:
 
-1. Look up `laneID`.
-2. If missing, create a new lane.
-3. Resolve the lane index from `lane_map_`.
-4. Append `message` to `lanes_[idx]->content`.
-5. Return `true`.
+1. Look up `laneID` in `lane_map_`.
+2. If missing, create and insert a new `Lane`.
+3. Append `message` to `Lane::content`.
+4. Return `true`.
 
-Delivery order within a lane is FIFO because messages are pushed to the back of
-the deque and received from the front.
+Messages are pushed to the back of the deque, so delivery order is FIFO.
 
 Complexity:
 
 - Average `O(1)` lane lookup.
-- Amortized `O(1)` lane insertion into the vector.
-- `O(1)` message append to the deque.
+- Average `O(1)` lane insertion.
+- `O(1)` deque append.
 
 ## Subscribe Flow
 
@@ -113,22 +99,15 @@ Complexity:
 Algorithm:
 
 1. Look up `laneID`.
-2. If missing, create a new lane.
-3. Increment `num_receivers` only for the newly created lane.
-4. Return `true`.
+2. If missing, create and insert a new `Lane`.
+3. Return `true`.
 
-Important current behavior:
-
-- Calling `subscribe()` on an existing lane does not increment `num_receivers`.
-- A newly constructed `Lane` starts with `num_receivers == 1`, and
-  `subscribe()` increments it again when it creates the lane. That means a lane
-  created by `subscribe()` starts at `2`, while a lane created by `publish()`
-  starts at `1`.
-- `num_receivers` does not affect message retention or routing.
+The current code does not track subscribers beyond creating the lane. The old
+`num_receivers` field is commented out and has no runtime effect.
 
 ## Receive Flow
 
-`receive(laneID, message)` tries to pop one queued message from a lane.
+`receive(laneID, message)` tries to remove one queued message from a lane.
 
 Algorithm:
 
@@ -141,112 +120,89 @@ Algorithm:
 4. If the lane queue is empty:
    - Print an error message.
    - Return `false`.
-5. Copy the front queued message into `message`.
-6. Pop that message from the queue.
+5. Copy the oldest queued message into `message`.
+6. Remove that message from the deque.
 7. Return `true`.
 
-The receive operation is destructive. Once a message is returned by `receive()`,
-it is removed from the lane and cannot be received again.
+`receive()` is destructive. Once a message is received, it is no longer
+available.
 
-## Message Delivery Semantics
+## Delivery Semantics
 
-The current bus uses one queue per lane.
+The bus has one queue per lane.
 
-That means multiple receivers on the same lane compete for messages:
+This means:
 
 - Each message can be received once.
-- The first receiver to call `receive()` gets the oldest available message.
-- There is no broadcast behavior where every receiver gets its own copy.
-- There is no per-subscriber cursor or offset.
+- Multiple receivers on the same lane compete for messages.
+- The bus does not broadcast a copy of each message to every subscriber.
+- There are no per-subscriber cursors.
 
-This design is closer to a work queue than a pub/sub broadcast bus.
+This is work-queue behavior, not broadcast pub/sub behavior.
+
+## Build Layout
+
+The root Makefile builds only the library:
+
+```bash
+make all
+```
+
+That creates `libniniBUS.a` and removes generated `.o` and `.d` files.
+
+The example owns its own build:
+
+```bash
+cd example
+make all
+```
+
+That creates `example/niniBUS_example` and removes generated `.o` and `.d`
+files from the example folder.
 
 ## Ownership And Lifetime
 
-`publish()` and `subscribe()` allocate lanes with `new`.
+The bus allocates lanes with `new` and stores raw `Lane*` values in
+`lane_map_`.
 
-Current lifetime behavior:
+The current destructor prints shutdown messages but does not delete the lanes.
+As written, allocated lanes leak when the bus is destroyed.
 
-- `niniBUS` stores raw `Lane*` pointers.
-- `niniBUS::~niniBUS()` prints messages, but does not delete the allocated
-  `Lane` objects.
-- As written, created lanes leak memory.
+A safer future design would use:
 
-A safer design would store lanes by value or use `std::unique_ptr<Lane>` and
-release them automatically when the bus is destroyed.
-
-## Static Index Caveat
-
-`lanes_idx_` is static, so it is shared by every `niniBUS` instance.
-
-`lane_map_` and `lanes_` are not static, so they are per-instance.
-
-This combination can break if more than one `niniBUS` object is created. The
-second bus may assign a new lane an index greater than zero even though its own
-`lanes_` vector is empty, causing later `lanes_[idx]` access to be invalid.
-
-The index should be an instance member, or lane indices should be derived from
-`lanes_.size()`.
+- `std::unordered_map<lane_t, Lane>` for direct value ownership, or
+- `std::unordered_map<lane_t, std::unique_ptr<Lane>>` for pointer ownership.
 
 ## Thread Safety
 
-The current implementation has no mutexes or other synchronization.
+The current implementation has no synchronization.
 
-Concurrent calls to `publish()`, `subscribe()`, or `receive()` can race while
-reading or writing:
+Concurrent calls to `publish()`, `subscribe()`, or `receive()` can race on:
 
 - `lane_map_`
-- `lanes_`
-- `lanes_idx_`
 - each lane's `content` deque
-- each lane's `num_receivers`
 
-The bus should be treated as single-threaded unless synchronization is added.
+Treat the bus as single-threaded unless a mutex or another synchronization
+strategy is added.
 
 ## Error Handling
 
 All public methods return `bool`.
 
-Current return behavior:
+- `publish()` returns `true` after appending a message.
+- `subscribe()` returns `true` after ensuring the lane exists.
+- `receive()` returns `true` only when a message was received.
+- `receive()` returns `false` when the lane was missing or the lane was empty.
 
-- `publish()` always returns `true` unless the program terminates due to an
-  exception or undefined behavior.
-- `subscribe()` always returns `true` unless the program terminates due to an
-  exception or undefined behavior.
-- `receive()` returns `false` when the lane does not exist or when the lane has
-  no queued messages.
-
-`receive()` uses the same `false` result for different conditions. Callers cannot
-distinguish "lane did not exist" from "lane exists but is empty" without relying
-on console output.
-
-## Current Invariants
-
-The implementation depends on these invariants:
-
-- Every lane ID in `lane_map_` maps to a valid index in `lanes_`.
-- The `Lane*` at that index belongs to the same lane ID.
-- `lanes_idx_` always points to the next unused vector index.
-- A message is only removed after it has been copied into the caller-provided
-  output string.
-
-Because the data members are private, only `niniBUS` methods can normally
-preserve or break these invariants.
+Because both missing-lane and empty-lane cases return `false`, callers cannot
+distinguish those cases without relying on console output.
 
 ## Recommended Next Improvements
 
-The smallest practical improvements are:
-
-1. Replace `std::vector<Lane*>` with `std::vector<std::unique_ptr<Lane>>`, or
-   store `Lane` objects directly.
-2. Make `lanes_idx_` a non-static member, or remove it and use `lanes_.size()`
-   when assigning new lane indices.
-3. Make `subscribe()` increment `num_receivers` consistently, or remove
-   `num_receivers` until receiver tracking is implemented.
-4. Add a mutex around all access to bus state if the bus is used by multiple
-   threads.
-5. Replace the `bool` receive result with a small enum so callers can distinguish
-   success, missing lane, and empty lane.
-6. Decide whether the bus should be a competing-consumer queue or a broadcast
-   pub/sub bus, then make the data model match that behavior.
-
+1. Replace raw `Lane*` ownership with value storage or `std::unique_ptr`.
+2. Delete commented-out fields and stale comments once the pointer-map design is
+   final.
+3. Add mutex protection if the bus will be used from multiple threads.
+4. Replace the `bool` receive result with an enum for clearer error reporting.
+5. Decide whether the bus should remain a competing-consumer queue or become a
+   broadcast pub/sub bus.

@@ -16,12 +16,10 @@ public:
     lane_t laneID;
     std::deque<std::string> content;
     // Add more fields as needed
-    uint32_t num_receivers; // number of receivers
+    //uint32_t num_receivers; // number of receivers
 
-    Lane(lane_t id) : laneID(id), num_receivers(1)
+    Lane(lane_t id) : laneID(id)
     {
-        //std::cout<<"lane: "<<laneID<<" created"<<std::endl;
-        //std::cout<<"num_receivers: "<<num_receivers<<std::endl;
     };
     Lane(const Lane& other) = default;
     Lane& operator=(const Lane& other) = delete; //no copy or move or assignment allowed
@@ -33,9 +31,9 @@ public:
 class niniBUS
 {
 private:
-    std::vector<Lane*> lanes_;
-    static uint32_t lanes_idx_; //hold the next new publisher idx
-    std::unordered_map<uint32_t, uint32_t > lane_map_; // map for msg iD, its idx
+    //std::vector<Lane*> lanes_;
+   // static uint32_t lanes_idx_; //hold the next new publisher idx
+    std::unordered_map<uint32_t, Lane*> lane_map_; // map for msg iD, its idx
 
 public:
     niniBUS() = default;

@@ -1,42 +1,41 @@
 
-# Compiler and flags
 CXX := g++
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -MMD -MP
-LDFLAGS :=
+CPPFLAGS := -I.
+AR := ar
+ARFLAGS := rcs
 
-# Target
-TARGET := niniBUS
+LIB := libniniBUS.a
 
-# Sources and objects
-SRCS := $(wildcard *.cpp)
-OBJS := $(SRCS:.cpp=.o)
-DEPS := $(OBJS:.o=.d)
+LIB_SRCS := niniBUS.cpp
+LIB_OBJS := $(LIB_SRCS:.cpp=.o)
 
-.PHONY: all build niniBUS clean run debug
+DEPS := $(LIB_OBJS:.o=.d)
 
-all: build
+.PHONY: all build lib library niniBUS clean clean-meta debug
 
-# build produces the executable and keeps object/dependency files
-build: $(OBJS)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $^ $(LDFLAGS)
+all: $(LIB)
+	rm -f $(LIB_OBJS) $(DEPS)
 
-# make niniBUS will build then remove intermediate meta files, leaving only the executable
-niniBUS: build
-	@echo "Removing meta files (.o .d), keeping $(TARGET)"
-	rm -f $(OBJS) $(DEPS)
+build: $(LIB)
+
+lib library: all
+
+$(LIB): $(LIB_OBJS)
+	$(AR) $(ARFLAGS) $@ $^
+
+niniBUS: lib
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-# Include dependency files if they exist
 -include $(DEPS)
 
 clean:
-	rm -f $(OBJS) $(TARGET) $(DEPS)
+	rm -f $(LIB_OBJS) $(DEPS) $(LIB)
 
-run: all
-	./$(TARGET)
+clean-meta:
+	rm -f $(LIB_OBJS) $(DEPS)
 
 debug: CXXFLAGS += -g -O0
-debug: clean all
-
+debug: clean lib
