@@ -58,9 +58,9 @@ creates missing lanes lazily instead of returning that value.
 - `niniBUS.h` - public API, result enums, and `Lane` structure.
 - `niniBUS.cpp` - message bus implementation.
 - `Makefile` - builds the `niniBUS` static library.
-- `example/main.cpp` - small example program.
-- `example/Makefile` - builds and runs the example.
-- `DESIGN.md` - current architecture and implementation notes.
+- `example/hello.cpp` - assert-based example tests.
+- `example/Makefile` - builds and runs `hello.cpp`.
+- `doc/DESIGN.md` - current architecture and implementation notes.
 - `doc/DesignDecisions.md` - design decision log.
 - `doc/Milestone.md` - phased roadmap and TODO lists.
 - `doc/FutureTopics.md` - deferred ideas and research topics.
@@ -70,7 +70,7 @@ creates missing lanes lazily instead of returning that value.
 
 Start here:
 
-- [DESIGN.md](DESIGN.md) - how the current bus is structured.
+- [doc/DESIGN.md](doc/DESIGN.md) - how the current bus is structured.
 - [doc/DesignDecisions.md](doc/DesignDecisions.md) - why key design choices
   were made, including the move from vector/index storage to direct map storage.
 - [doc/Milestone.md](doc/Milestone.md) - active and future phase TODO lists.
@@ -113,16 +113,23 @@ make all
 This creates:
 
 ```bash
-example/niniBUS_example
+example/hello
 ```
 
 Generated `.o` and `.d` files are removed automatically.
 
-Run the example:
+Run the hello example tests:
 
 ```bash
 cd example
 make run
+```
+
+You can also use:
+
+```bash
+cd example
+make test
 ```
 
 Clean the example:
@@ -132,20 +139,15 @@ cd example
 make clean
 ```
 
-## Example Behavior
+## Hello Test Behavior
 
-`example/main.cpp`:
+`example/hello.cpp` uses `assert()` to check:
 
-1. Creates a `niniBUS` instance.
-2. Subscribes to lanes `1` and `2`.
-3. Publishes two messages to lane `1`.
-4. Receives from lane `1`.
-5. Attempts to receive from lane `2`.
-6. Receives from lane `1` again.
-
-Lane `1` has two queued messages, so both receives from lane `1` succeed.
-Lane `2` exists but has no queued messages, so receiving from lane `2` returns
-`ReceiveResult::LaneEmpty` and leaves the output string empty.
+- FIFO ordering.
+- Multiple lanes do not interfere.
+- Receive from an empty lane.
+- Publish to a non-existing lane.
+- Subscribe behavior.
 
 ## Important Limitations
 
@@ -156,4 +158,4 @@ Lane `2` exists but has no queued messages, so receiving from lane `2` returns
   implementation.
 - The destructor prints shutdown messages, which may be noisy for library users.
 
-See [DESIGN.md](DESIGN.md) and the files in [doc/](doc/) for more detail.
+See [doc/DESIGN.md](doc/DESIGN.md) and the files in [doc/](doc/) for more detail.

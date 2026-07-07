@@ -3,13 +3,13 @@ CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -MMD -MP
 CPPFLAGS := -I..
 LDFLAGS := -L.. -lniniBUS
 
-TARGET := niniBUS_example
-SRCS := main.cpp
+TARGET := hello
+SRCS := hello.cpp
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(OBJS:.o=.d)
 LIB := ../libniniBUS.a
 
-.PHONY: all build clean clean-meta run debug
+.PHONY: all build clean clean-meta run test debug
 
 all: $(TARGET)
 	rm -f $(OBJS) $(DEPS)
@@ -35,6 +35,8 @@ clean-meta:
 
 run: all
 	./$(TARGET)
+
+test: run
 
 debug: CXXFLAGS += -g -O0
 debug: clean build

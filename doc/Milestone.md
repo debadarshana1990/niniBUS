@@ -36,7 +36,7 @@ TODO:
 - [x] Make `make all` remove `.o` and `.d` metadata files.
 - [x] Update `README.md`.
 - [x] Update `DESIGN.md`.
-- [ ] Make the example check `ReceiveResult` before printing received data.
+- [x] Make the example check `ReceiveResult` before printing received data.
 - [x] Decide whether the destructor should print messages or stay quiet. : Its humor, let it be 
 - [x] Remove unused includes such as `<vector>` and `<queue>`.
 
