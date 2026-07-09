@@ -30,7 +30,7 @@ bool niniBUS::subscribe(lane_t laneID)
     auto it = lane_map_.find(laneID);
     if (it == lane_map_.end())
     {
-        Lane newLane(laneID);
+        Lane newLane;
         lane_map_[laneID] = newLane;
     }
 
