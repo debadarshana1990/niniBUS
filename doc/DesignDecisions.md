@@ -123,23 +123,31 @@ communication path. Applications assign meaning to lane IDs.
 
 **Status**: current
 
-**Decision**: expose three core operations:
+**Decision**: expose three core operations with explicit publish and receive
+status reporting:
 
 ```cpp
 PublishResult publish(lane_t laneID, std::string message);
-ReceiveResult receive(lane_t laneID, std::string& message);
+ReceiveStatus receive(lane_t laneID, std::string& message);
 bool subscribe(lane_t laneID);
 ```
 
 **Rationale**:
 
-- `publish()` is the familiar operation for adding data to a bus.
-- `receive()` clearly communicates destructive FIFO consumption.
-- `subscribe()` currently means "ensure this lane exists".
+- `publish()` is the familiar operation for adding data to a bus, and now
+  returns both publish status and remaining lane credit.
+- `receive()` clearly communicates destructive FIFO consumption and returns a
+  `ReceiveStatus` so callers can distinguish success, empty lane, and lazy lane
+  creation.
+- `subscribe()` currently means "ensure this lane exists" and remains a simple
+  `bool` operation.
 
 **Consequences**:
 
 - The API is small and direct.
+- Publishers can react to `PublishStatus::LaneFull`.
+- Publishers can read `PublishResult::Credit` without separately querying lane
+  internals.
 - `subscribe()` does not currently register callbacks or receiver identity.
 - The name `subscribe()` may sound stronger than its current behavior.
 
@@ -222,8 +230,8 @@ to, or received from.
 
 **Consequences**:
 
-- Missing-lane receive returns `ReceiveResult::LazyLaneCreated`.
-- `ReceiveResult::LaneNotFound` is currently defined but not produced.
+- Missing-lane receive returns `ReceiveStatus::LazyLaneCreated`.
+- `ReceiveStatus::LaneNotFound` is currently defined but not produced.
 - Applications that want strict lane registration need extra policy later.
 
 **Revisit when**:
@@ -231,20 +239,26 @@ to, or received from.
 - Strict lane registration is required.
 - Missing-lane receive should be an error instead of creating a lane.
 
-## DD-008 - Result Enums For Publish And Receive
+## DD-008 - Result Types For Publish And Receive
 
 **Status**: current
 
-**Decision**: `publish()` and `receive()` return enum result types.
+**Decision**: `publish()` returns a result struct containing status and credit,
+while `receive()` returns an enum status.
 
 ```cpp
-enum class PublishResult {
+enum class PublishStatus {
     Ok,
     LaneNotFound,
     LaneFull
 };
 
-enum class ReceiveResult {
+struct PublishResult {
+    uint32_t Credit;
+    PublishStatus Status;
+};
+
+enum class ReceiveStatus {
     Ok,
     LaneNotFound,
     LaneEmpty,
@@ -254,14 +268,16 @@ enum class ReceiveResult {
 
 **Rationale**:
 
-- Enums describe outcomes better than plain `bool`.
+- Explicit statuses describe outcomes better than plain `bool`.
+- `publish()` needs to report both success/failure status and remaining lane
+  credit.
 - `receive()` can distinguish success, empty lane, and lazy lane creation.
-- Future bounded queues can use `PublishResult::LaneFull`.
+- Bounded lanes use `PublishStatus::LaneFull`.
 
 **Consequences**:
 
 - Callers should check the result before using output data.
-- Some enum values are currently placeholders.
+- Some status values are currently placeholders.
 - Documentation must say which results are actually produced today.
 
 **Revisit when**:
@@ -342,7 +358,70 @@ prefer clear implementation over premature compactness.
 - The project defines hard memory limits.
 - V2 starts.
 
-## DD-012 - Documentation Tracks The Code
+## DD-012 - Lane Credit
+
+**Status**: current
+
+**Decision**: every lane exposes remaining publish credit through
+`PublishResult`.
+
+Lane credit is derived as:
+
+```text
+Credit = Capacity - Queue Size
+```
+
+In the current implementation, credit is returned after `publish()`:
+
+```cpp
+struct PublishResult {
+    uint32_t Credit;
+    PublishStatus Status;
+};
+```
+
+**Rationale**:
+
+- Credit gives producers immediate feedback about remaining lane capacity.
+- The idea is inspired by TCP-style flow control.
+- Instead of only accepting or rejecting messages, the bus reports how much
+  buffer space remains.
+- Applications can use credit to adapt publishing rate without inspecting the
+  internal lane queue.
+- Credit is derived from lane state, not stored as separate state.
+
+**Consequences**:
+
+- Each lane has a capacity.
+- `PublishResult::Credit` reports remaining capacity after a publish attempt.
+- Publishing to a full lane returns `PublishStatus::LaneFull`.
+- Credit currently changes after publish and receive operations, but only
+  `publish()` returns the credit value.
+- The queue implementation remains hidden from API users.
+
+**Current scope**:
+
+- Credit is returned after `publish()`.
+- Credit is derived from `capacity - content.size()`.
+- Lane capacity is currently fixed by `MAX_LANE_CAPACITY`.
+
+**Future possibilities**:
+
+- High/low watermarks.
+- Adaptive publishing.
+- Rate limiting.
+- Congestion control.
+- Returning updated credit from `receive()`.
+- Per-lane capacity configuration.
+
+**Revisit when**:
+
+- Credit needs to be thread-safe.
+- Capacity becomes configurable.
+- The bus adds blocking publish or receive APIs.
+- Back-pressure policy becomes more complex than `LaneFull`.
+
+## DD-013 - Documentation Tracks The Code
 
 **Status**: accepted
 
@@ -376,7 +455,7 @@ especially when API return types or ownership models change.
 - Should unused enum values be removed until they are implemented?
 - Should missing-lane receive create a lane, or should it return a strict
   not-found result?
-- Should the example be updated to check `ReceiveResult` before printing the
+- Should the example be updated to check `ReceiveStatus` before printing the
   output string?
 
 ## Design Philosophy

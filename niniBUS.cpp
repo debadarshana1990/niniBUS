@@ -8,15 +8,20 @@ PublishResult niniBUS::publish(lane_t laneID, std::string message)
     auto it = lane_map_.find(laneID);
     if(it != lane_map_.end())
     {
+        if(it->second.content.size() >= it->second.capacity)
+        {
+            std::cerr << "Lane ID " << laneID << " is full. Cannot publish message." << std::endl;
+            return PublishResult{it->second.getCredit(), PublishStatus::LaneFull};
+        }
         // Lane exists, push message directly to the map entry
         lane_map_[laneID].content.push_back(message);
-        return PublishResult::Ok;
+        return PublishResult{lane_map_[laneID].getCredit(), PublishStatus::Ok};
     }
     //if its not present need to create the object and push the message
     Lane newLane(laneID);
     lane_map_[laneID] = newLane;
     lane_map_[laneID].content.push_back(message);
-    return PublishResult::Ok;
+    return PublishResult{lane_map_[laneID].getCredit(), PublishStatus::Ok};
 }
 /* subscribe*/
 bool niniBUS::subscribe(lane_t laneID)
@@ -33,7 +38,7 @@ bool niniBUS::subscribe(lane_t laneID)
 }
 
 /* pull message is interesting */
-ReceiveResult niniBUS::receive(lane_t laneID, std::string& message)
+ReceiveStatus niniBUS::receive(lane_t laneID, std::string& message)
 {
     message.clear();
     //check if the laneID is present
@@ -42,7 +47,7 @@ ReceiveResult niniBUS::receive(lane_t laneID, std::string& message)
     {
         std::cerr << "Lane ID not found. Subscribing for future messages." << std::endl;
         subscribe(laneID);
-        return ReceiveResult::LazyLaneCreated;
+        return ReceiveStatus::LazyLaneCreated;
     }
 
     // Get reference to the lane in the map and check if it has content
@@ -50,12 +55,12 @@ ReceiveResult niniBUS::receive(lane_t laneID, std::string& message)
     if (laneObj.content.empty())
     {
         std::cerr << "No content available for lane ID " << laneID << std::endl;
-        return ReceiveResult::LaneEmpty;
+        return ReceiveStatus::LaneEmpty;
     }
 
     // Pull the latest content
     message = laneObj.content.front();
     laneObj.content.pop_front();
 
-    return ReceiveResult::Ok;
+    return ReceiveStatus::Ok;
 }

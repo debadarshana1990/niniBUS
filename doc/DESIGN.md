@@ -13,7 +13,8 @@ message queue, and `receive()` removes one message from that queue.
   container.
 - `niniBUS.cpp` implements lane creation, publishing, subscribing, and receiving.
 - `Makefile` builds `niniBUS.cpp` into the static library `libniniBUS.a`.
-- `example/main.cpp` demonstrates single-threaded usage.
+- `example/hello.cpp` demonstrates single-threaded usage and assert-based
+  behavior checks.
 - `example/Makefile` builds the example executable and links it against
   `../libniniBUS.a`.
 
@@ -22,21 +23,26 @@ message queue, and `receive()` removes one message from that queue.
 ```cpp
 using lane_t = uint32_t;
 
-enum class PublishResult {
+enum class PublishStatus {
     Ok,
     LaneNotFound,
     LaneFull
 };
 
-enum class ReceiveResult {
+enum class ReceiveStatus {
     Ok,
     LaneNotFound,
     LaneEmpty,
     LazyLaneCreated
 };
 
+struct PublishResult {
+    uint32_t Credit;
+    PublishStatus Status;
+};
+
 PublishResult publish(lane_t laneID, std::string message);
-ReceiveResult receive(lane_t laneID, std::string& message);
+ReceiveStatus receive(lane_t laneID, std::string& message);
 bool subscribe(lane_t laneID);
 ```
 
@@ -51,10 +57,17 @@ bool subscribe(lane_t laneID);
 Fields:
 
 - `laneID`: the numeric lane identifier.
+- `capacity`: the maximum number of queued messages for the lane.
 - `content`: a `std::deque<std::string>` containing pending messages.
 
 `Lane` can be default-constructed with lane ID `0`, constructed with a specific
 lane ID, and copied. It does not own external resources.
+
+`Lane::getCredit()` returns remaining queue capacity:
+
+```cpp
+capacity - content.size()
+```
 
 ### `niniBUS`
 
@@ -93,11 +106,14 @@ Algorithm:
 
 1. Look up `laneID` in `lane_map_`.
 2. If the lane exists, append `message` to that lane's `content`.
-3. If the lane does not exist, construct a new `Lane`, insert it into the map,
+3. If the lane exists but `content.size() >= capacity`, return
+   `PublishStatus::LaneFull` with zero credit.
+4. If the lane does not exist, construct a new `Lane`, insert it into the map,
    append `message`, and return success.
-4. Return `PublishResult::Ok`.
+5. Return `PublishResult{Credit, PublishStatus::Ok}` on success.
 
 Messages are pushed to the back of the deque, so delivery order is FIFO.
+Credit is reported after the publish attempt.
 
 Complexity:
 
@@ -105,10 +121,14 @@ Complexity:
 - Average `O(1)` lane insertion.
 - `O(1)` deque append.
 
-Defined but currently unused publish results:
+Current publish statuses:
 
-- `PublishResult::LaneNotFound`
-- `PublishResult::LaneFull`
+- `PublishStatus::Ok`
+- `PublishStatus::LaneFull`
+
+Defined but currently unused publish status:
+
+- `PublishStatus::LaneNotFound`
 
 ## Subscribe Flow
 
@@ -133,20 +153,20 @@ Algorithm:
 3. If missing:
    - Print an error message.
    - Call `subscribe(laneID)` so the lane exists for future messages.
-   - Return `ReceiveResult::LazyLaneCreated`.
+   - Return `ReceiveStatus::LazyLaneCreated`.
 4. If the lane queue is empty:
    - Print an error message.
-   - Return `ReceiveResult::LaneEmpty`.
+   - Return `ReceiveStatus::LaneEmpty`.
 5. Copy the oldest queued message into `message`.
 6. Remove that message from the deque.
-7. Return `ReceiveResult::Ok`.
+7. Return `ReceiveStatus::Ok`.
 
 `receive()` is destructive. Once a message is received, it is no longer
 available.
 
 Defined but currently unused receive result:
 
-- `ReceiveResult::LaneNotFound`
+- `ReceiveStatus::LaneNotFound`
 
 ## Delivery Semantics
 
@@ -178,7 +198,7 @@ cd example
 make all
 ```
 
-That creates `example/niniBUS_example` and removes generated `.o` and `.d`
+That creates `example/hello` and removes generated `.o` and `.d`
 files from the example folder.
 
 ## Ownership And Lifetime
@@ -204,25 +224,28 @@ strategy is added.
 
 ## Error Handling
 
-`publish()` and `receive()` use enum result types. This is clearer than a plain
-boolean because callers can distinguish an empty lane from a lazily created
-lane.
+`publish()` returns a result struct containing both status and lane credit.
+`receive()` returns an enum status. This is clearer than a plain boolean because
+callers can distinguish full lanes, empty lanes, and lazily created lanes.
 
 Current behavior:
 
-- `publish()` returns `PublishResult::Ok`.
+- `publish()` returns `PublishResult{Credit, Status}`.
+- `publish()` returns `PublishStatus::Ok` when a message was queued.
+- `publish()` returns `PublishStatus::LaneFull` when a lane has no remaining
+  credit.
 - `subscribe()` returns `true`.
-- `receive()` returns `ReceiveResult::Ok` when a message was received.
-- `receive()` returns `ReceiveResult::LazyLaneCreated` when a missing lane was
+- `receive()` returns `ReceiveStatus::Ok` when a message was received.
+- `receive()` returns `ReceiveStatus::LazyLaneCreated` when a missing lane was
   created for future messages.
-- `receive()` returns `ReceiveResult::LaneEmpty` when the lane exists but has no
+- `receive()` returns `ReceiveStatus::LaneEmpty` when the lane exists but has no
   queued messages.
 
 ## Recommended Next Improvements
 
-1. Remove unused result values or implement the conditions that produce them.
-2. Remove unused includes such as `<vector>` and `<queue>` if they are no longer
-   needed.
+1. Decide whether lane capacity should stay fixed at `MAX_LANE_CAPACITY` or
+   become configurable per lane.
+2. Remove unused result values or implement the conditions that produce them.
 3. Add mutex protection if the bus will be used from multiple threads.
 4. Decide whether the bus should remain a competing-consumer queue or become a
    broadcast pub/sub bus.

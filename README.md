@@ -12,21 +12,26 @@ The public API is declared in `niniBUS.h`:
 ```cpp
 using lane_t = uint32_t;
 
-enum class PublishResult {
+enum class PublishStatus {
     Ok,
     LaneNotFound,
     LaneFull
 };
 
-enum class ReceiveResult {
+enum class ReceiveStatus {
     Ok,
     LaneNotFound,
     LaneEmpty,
     LazyLaneCreated
 };
 
+struct PublishResult {
+    uint32_t Credit;
+    PublishStatus Status;
+};
+
 PublishResult publish(lane_t laneID, std::string message);
-ReceiveResult receive(lane_t laneID, std::string& message);
+ReceiveStatus receive(lane_t laneID, std::string& message);
 bool subscribe(lane_t laneID);
 ```
 
@@ -34,23 +39,38 @@ bool subscribe(lane_t laneID);
 
 - A lane is created lazily when it is first published to or subscribed to.
 - Each lane stores messages in a FIFO `std::deque<std::string>`.
-- `publish()` appends a message to a lane and returns `PublishResult::Ok`.
+- Each lane has a fixed capacity of `MAX_LANE_CAPACITY`.
+- `publish()` appends a message to a lane and returns `PublishResult`.
+- `PublishResult::Status` says whether publish succeeded or the lane was full.
+- `PublishResult::Credit` reports remaining lane capacity after the publish
+  attempt.
 - `receive()` removes the oldest message from a lane when available.
 - `subscribe()` ensures that a lane exists.
 
 Each lane has one queue, so multiple receivers on the same lane compete for
 messages. A received message is removed and cannot be received again.
 
+## Publish Results
+
+`publish()` returns a `PublishResult`:
+
+- `Status == PublishStatus::Ok` when the message was queued.
+- `Status == PublishStatus::LaneFull` when the lane has no remaining credit.
+- `Credit` is the number of messages that can still be accepted by that lane.
+
+`PublishStatus::LaneNotFound` exists in the API, but the current implementation
+creates missing lanes lazily instead of returning that value.
+
 ## Receive Results
 
 `receive()` returns:
 
-- `ReceiveResult::Ok` when a message was received.
-- `ReceiveResult::LazyLaneCreated` when the lane did not exist and was created
+- `ReceiveStatus::Ok` when a message was received.
+- `ReceiveStatus::LazyLaneCreated` when the lane did not exist and was created
   for future messages.
-- `ReceiveResult::LaneEmpty` when the lane exists but has no queued messages.
+- `ReceiveStatus::LaneEmpty` when the lane exists but has no queued messages.
 
-`ReceiveResult::LaneNotFound` exists in the API, but the current implementation
+`ReceiveStatus::LaneNotFound` exists in the API, but the current implementation
 creates missing lanes lazily instead of returning that value.
 
 ## Repository Layout
@@ -148,14 +168,16 @@ make clean
 - Receive from an empty lane.
 - Publish to a non-existing lane.
 - Subscribe behavior.
+- Lane credit.
+- Lane full behavior.
 
 ## Important Limitations
 
 - The bus is not thread-safe.
 - `subscribe()` only creates a lane; it does not track subscriber count.
-- `PublishResult::LaneNotFound`, `PublishResult::LaneFull`, and
-  `ReceiveResult::LaneNotFound` are defined but not currently produced by the
-  implementation.
+- `PublishStatus::LaneNotFound` and `ReceiveStatus::LaneNotFound` are defined
+  but not currently produced by the implementation.
+- Lane capacity is currently fixed by `MAX_LANE_CAPACITY`.
 - The destructor prints shutdown messages, which may be noisy for library users.
 
 See [doc/DESIGN.md](doc/DESIGN.md) and the files in [doc/](doc/) for more detail.
