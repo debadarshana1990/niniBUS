@@ -54,14 +54,25 @@ bool subscribe(lane_t laneID);
 
 `Lane` stores queued messages for one lane.
 
-Fields:
+Private fields:
 
-- `laneID`: the numeric lane identifier.
 - `capacity`: the maximum number of queued messages for the lane.
 - `content`: a `std::deque<std::string>` containing pending messages.
 
-`Lane` can be default-constructed with lane ID `0`, constructed with a specific
-lane ID, and copied. It does not own external resources.
+`Lane` does not store its own lane ID. The lane ID is already the key in
+`niniBUS::lane_map_`, so storing the same value inside every `Lane` would
+duplicate state.
+
+`Lane` can be constructed with a capacity and copied. It does not own external
+resources.
+
+Public helper functions:
+
+- `push(message)`: append a message to the lane queue.
+- `pop()`: remove and return the oldest queued message.
+- `qsize()`: return the current queued message count.
+- `getCapacity()`: return the lane capacity.
+- `getCredit()`: return remaining queue capacity.
 
 `Lane::getCredit()` returns remaining queue capacity:
 
@@ -94,9 +105,19 @@ A lane can be created by:
 Creation flow:
 
 1. Search `lane_map_` for `laneID`.
-2. If missing, construct a `Lane` for that ID.
+2. If missing, construct a `Lane`.
 3. Store the lane in `lane_map_`.
 4. Use the stored lane for later operations.
+
+Current implementation caveat:
+
+- `publish()` creates a missing lane with the default `Lane` constructor, so it
+  uses `MAX_LANE_CAPACITY`.
+- `subscribe()` currently calls `Lane(laneID)`. Since `Lane` no longer stores a
+  lane ID and its constructor argument is capacity, this makes the subscribed
+  lane's capacity depend on the lane ID.
+- This should be normalized in code later if every lane is meant to use
+  `MAX_LANE_CAPACITY` by default.
 
 ## Publish Flow
 
@@ -105,11 +126,11 @@ Creation flow:
 Algorithm:
 
 1. Look up `laneID` in `lane_map_`.
-2. If the lane exists, append `message` to that lane's `content`.
-3. If the lane exists but `content.size() >= capacity`, return
+2. If the lane exists but `qsize() >= getCapacity()`, return
    `PublishStatus::LaneFull` with zero credit.
+3. If the lane exists and has credit, call `Lane::push(message)`.
 4. If the lane does not exist, construct a new `Lane`, insert it into the map,
-   append `message`, and return success.
+   call `Lane::push(message)`, and return success.
 5. Return `PublishResult{Credit, PublishStatus::Ok}` on success.
 
 Messages are pushed to the back of the deque, so delivery order is FIFO.
@@ -157,8 +178,7 @@ Algorithm:
 4. If the lane queue is empty:
    - Print an error message.
    - Return `ReceiveStatus::LaneEmpty`.
-5. Copy the oldest queued message into `message`.
-6. Remove that message from the deque.
+5. Call `Lane::pop()` and copy the returned oldest message into `message`.
 7. Return `ReceiveStatus::Ok`.
 
 `receive()` is destructive. Once a message is received, it is no longer
@@ -217,7 +237,7 @@ The current implementation has no synchronization.
 Concurrent calls to `publish()`, `subscribe()`, or `receive()` can race on:
 
 - `lane_map_`
-- each lane's `content` deque
+- each lane's private `content` deque
 
 Treat the bus as single-threaded unless a mutex or another synchronization
 strategy is added.
@@ -245,9 +265,9 @@ Current behavior:
 
 1. Decide whether lane capacity should stay fixed at `MAX_LANE_CAPACITY` or
    become configurable per lane.
-2. Remove unused result values or implement the conditions that produce them.
-3. Add mutex protection if the bus will be used from multiple threads.
-4. Decide whether the bus should remain a competing-consumer queue or become a
+2. Normalize lane creation so `publish()` and `subscribe()` use the same default
+   capacity behavior.
+3. Remove unused result values or implement the conditions that produce them.
+4. Add mutex protection if the bus will be used from multiple threads.
+5. Decide whether the bus should remain a competing-consumer queue or become a
    broadcast pub/sub bus.
-5. Consider making the destructor quiet so the library does not print during
-   normal object cleanup.

@@ -39,7 +39,10 @@ bool subscribe(lane_t laneID);
 
 - A lane is created lazily when it is first published to or subscribed to.
 - Each lane stores messages in a FIFO `std::deque<std::string>`.
-- Each lane has a fixed capacity of `MAX_LANE_CAPACITY`.
+- Lanes use `MAX_LANE_CAPACITY` as the intended default capacity.
+- The lane ID is stored as the key in the bus map, not inside the `Lane` object.
+- `Lane` keeps its queue internals private and exposes helper functions for
+  pushing, popping, checking size, capacity, and credit.
 - `publish()` appends a message to a lane and returns `PublishResult`.
 - `PublishResult::Status` says whether publish succeeded or the lane was full.
 - `PublishResult::Credit` reports remaining lane capacity after the publish
@@ -177,7 +180,12 @@ make clean
 - `subscribe()` only creates a lane; it does not track subscriber count.
 - `PublishStatus::LaneNotFound` and `ReceiveStatus::LaneNotFound` are defined
   but not currently produced by the implementation.
-- Lane capacity is currently fixed by `MAX_LANE_CAPACITY`.
-- The destructor prints shutdown messages, which may be noisy for library users.
+- Lane capacity is intended to default to `MAX_LANE_CAPACITY`, but current lane
+  creation paths should be normalized so subscribe-created lanes use the same
+  default behavior.
+- Lane internals are private; callers interact through the bus API rather than
+  directly mutating lane queues.
+- Current `subscribe()` lane creation should be reviewed because `Lane` no
+  longer stores lane ID and its constructor argument now represents capacity.
 
 See [doc/DESIGN.md](doc/DESIGN.md) and the files in [doc/](doc/) for more detail.

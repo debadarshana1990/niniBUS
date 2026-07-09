@@ -196,6 +196,7 @@ std::unordered_map<uint32_t, uint32_t> lane_map_; // laneID -> vector index
 - The current implementation has no per-lane ownership leak.
 - There is only one authoritative lane registry: `lane_map_`.
 - Map lookup returns the lane object directly.
+- The lane ID lives only as the map key, not as duplicated state inside `Lane`.
 - `Lane` must remain cheaply movable/copyable enough for map storage.
 - `unordered_map` still performs dynamic allocation internally.
 
@@ -215,7 +216,77 @@ map.
 - The project moves toward fixed-size embedded storage.
 - `Lane` gains non-copyable resources.
 
-## DD-007 - Lazy Lane Creation
+## DD-007 - Do Not Store Lane ID Inside Lane
+
+**Status**: accepted
+
+**Decision**: `Lane` does not store `laneID`; the lane ID is represented by the
+key in `niniBUS::lane_map_`.
+
+```cpp
+std::unordered_map<uint32_t, Lane> lane_map_;
+```
+
+**Rationale**:
+
+- The map key already identifies the lane.
+- Storing the same ID inside `Lane` duplicates state.
+- Removing `Lane::laneID` saves memory per lane.
+- Removing duplicated identity avoids consistency questions between the map key
+  and the value object.
+
+**Consequences**:
+
+- `Lane` is now only responsible for queue state and capacity.
+- Code that needs the lane ID should use the map key or the API parameter.
+- Debugging/logging for lane IDs should happen at the `niniBUS` layer, where the
+  lane ID is available.
+- Constructors and call sites must not treat the `Lane` constructor argument as
+  a lane ID. The constructor argument now represents capacity.
+
+**Revisit when**:
+
+- Lanes need self-describing metadata independent of the map.
+- Lane objects are moved outside `niniBUS::lane_map_`.
+- The bus adds named lanes or richer lane descriptors.
+- `subscribe()` and other lane creation paths are normalized around capacity.
+
+## DD-008 - Hide Lane Queue Internals
+
+**Status**: accepted
+
+**Decision**: `Lane` keeps `capacity` and `content` private and exposes small
+helper functions instead of allowing direct mutation.
+
+Current helpers:
+
+```cpp
+void push(std::string message);
+std::string pop();
+uint32_t qsize() const;
+uint32_t getCapacity() const;
+uint32_t getCredit() const;
+```
+
+**Rationale**:
+
+- The lane owns its queue invariants.
+- `niniBUS` should ask the lane for size, capacity, credit, push, and pop
+  behavior instead of reaching into the deque directly.
+- This keeps future FIFO changes localized inside `Lane`.
+
+**Consequences**:
+
+- `niniBUS` uses `qsize()`, `getCapacity()`, `push()`, and `pop()`.
+- Queue implementation details are less exposed.
+- Future bounded FIFO or custom queue work can start inside `Lane`.
+
+**Revisit when**:
+
+- `Lane` grows complex enough to deserve its own `.cpp` file.
+- The bus needs more detailed queue inspection APIs.
+
+## DD-009 - Lazy Lane Creation
 
 **Status**: accepted
 
@@ -239,7 +310,7 @@ to, or received from.
 - Strict lane registration is required.
 - Missing-lane receive should be an error instead of creating a lane.
 
-## DD-008 - Result Types For Publish And Receive
+## DD-010 - Result Types For Publish And Receive
 
 **Status**: current
 
@@ -285,7 +356,7 @@ enum class ReceiveStatus {
 - Placeholder enum values remain unused after V0.1.
 - `subscribe()` is converted from `bool` to a result enum.
 
-## DD-009 - Single-Threaded For V0
+## DD-011 - Single-Threaded For V0
 
 **Status**: accepted
 
@@ -308,7 +379,7 @@ enum class ReceiveStatus {
 - V3 concurrency starts.
 - The example or tests introduce multiple threads.
 
-## DD-010 - Static Library And Separate Example
+## DD-012 - Static Library And Separate Example
 
 **Status**: accepted
 
@@ -326,7 +397,7 @@ enum class ReceiveStatus {
 **Consequences**:
 
 - Root build output is `libniniBUS.a`.
-- Example build output is `example/niniBUS_example`.
+- Example build output is `example/hello`.
 - Users build the example from inside `example/`.
 
 **Revisit when**:
@@ -335,7 +406,7 @@ enum class ReceiveStatus {
 - Install/package targets are added.
 - A higher-level build system is introduced.
 
-## DD-011 - Defer Memory Optimization
+## DD-013 - Defer Memory Optimization
 
 **Status**: deferred
 
@@ -358,7 +429,7 @@ prefer clear implementation over premature compactness.
 - The project defines hard memory limits.
 - V2 starts.
 
-## DD-012 - Lane Credit
+## DD-014 - Lane Credit
 
 **Status**: current
 
@@ -421,7 +492,7 @@ struct PublishResult {
 - The bus adds blocking publish or receive APIs.
 - Back-pressure policy becomes more complex than `LaneFull`.
 
-## DD-013 - Documentation Tracks The Code
+## DD-015 - Documentation Tracks The Code
 
 **Status**: accepted
 

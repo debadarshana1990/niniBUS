@@ -30,20 +30,37 @@ struct PublishResult
 
 class Lane
 {
-public:
+
     // Message structure definition
-    lane_t laneID;
     uint32_t capacity;
     std::deque<std::string> content;
-
-    Lane() : laneID(0), capacity(0) {}
-    Lane(lane_t id, uint32_t cap = MAX_LANE_CAPACITY) : laneID(id), capacity(cap) {};
+public:
+   // Lane() : capacity(0) {}
+    Lane( uint32_t cap = MAX_LANE_CAPACITY) : capacity(cap) {};
     Lane(const Lane& other) = default;
     uint32_t getCredit() const 
     { 
         return capacity - content.size(); 
     }
     ~Lane(){}
+    void push(std::string message)
+    {
+        content.push_back(message);
+    };
+    std::string pop()
+    {
+        std::string msg = content.front();
+        content.pop_front();
+        return msg;
+    }
+    uint32_t qsize() const
+    {
+        return content.size();
+    }
+    uint32_t getCapacity() const
+    {
+        return capacity;
+    }
 };
 class niniBUS
 {
