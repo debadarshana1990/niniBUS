@@ -20,8 +20,8 @@ public:
        // std::cout<<"All messages will be lost."<<std::endl;
       //  std::cout<<"Be a good Human. World is enough for everyone."<<std::endl;
     }
-    PublishResult publish(lane_t,std::string message);
-    ReceiveStatus receive(lane_t,std::string& message);
+    PublishResult publish(lane_t, const std::string& message);
+    ReceiveStatus receive(lane_t, std::string& message);
     bool subscribe(lane_t LaneID);
 
 };

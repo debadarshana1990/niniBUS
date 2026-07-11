@@ -88,12 +88,12 @@ void test_lane_capacity_and_credit()
     // Publish a message and check remaining credit
     PublishResult result1 = bus.publish(40, "msg1");
     assert(result1.Status == PublishStatus::Ok);
-    assert(result1.Credit == MAX_LANE_CAPACITY - 1);  // 1023 messages left
+    assert(result1.Credit == DEFAULT_LANE_CAPACITY - 1);  // 9 messages left
 
     // Publish another and verify credit decreases
     PublishResult result2 = bus.publish(40, "msg2");
     assert(result2.Status == PublishStatus::Ok);
-    assert(result2.Credit == MAX_LANE_CAPACITY - 2);  // 1022 messages left
+    assert(result2.Credit == DEFAULT_LANE_CAPACITY - 2);  // 8 messages left
 
     // Receive one message and verify credit increases
     assert(bus.receive(40, message) == ReceiveStatus::Ok);
@@ -110,7 +110,7 @@ void test_lane_full_with_capacity_10()
     {
         PublishResult result = bus.publish(50, "msg" + std::to_string(i));
         assert(result.Status == PublishStatus::Ok);
-        assert(result.Credit == MAX_LANE_CAPACITY - i);  // Remaining credit
+        assert(result.Credit == DEFAULT_LANE_CAPACITY - i);  // Remaining credit
     }
 
     // Try to publish the 11th message - should fail (lane full)

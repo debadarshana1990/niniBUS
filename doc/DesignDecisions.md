@@ -255,14 +255,20 @@ std::unordered_map<uint32_t, Lane> lane_map_;
 
 **Status**: accepted
 
-**Decision**: `Lane` keeps `capacity` and `content` private and exposes small
-helper functions instead of allowing direct mutation.
+**Decision**: `Lane` keeps `capacity`, `content`, and capacity helper functions
+private. It exposes push/pop behavior instead of allowing direct mutation or
+bus-side queue inspection.
 
-Current helpers:
+Current public lane operations:
 
 ```cpp
-PublishResult push(std::string message);
+PublishResult push(const std::string& message);
 ReceiveStatus pop(std::string& message);
+```
+
+Current private lane helpers:
+
+```cpp
 uint32_t qsize() const;
 uint32_t getCapacity() const;
 uint32_t getCredit() const;
@@ -281,16 +287,14 @@ uint32_t getCredit() const;
 
 - `niniBUS` uses `push()` and `pop()` instead of mutating the lane queue
   directly.
-- `qsize()`, `getCapacity()`, and `getCredit()` are currently public helpers,
-  but the core bus no longer needs to call them for publish/receive behavior.
+- `qsize()`, `getCapacity()`, and `getCredit()` are private helpers.
 - Queue implementation details are less exposed.
 - Future bounded FIFO or custom queue work can start inside `Lane`.
 
 **Revisit when**:
 
 - The bus needs more detailed queue inspection APIs.
-- The helper methods should be narrowed, made private, or replaced by a stats
-  API.
+- A public stats API is needed.
 
 ## DD-009 - Separate Lane Implementation
 
@@ -538,7 +542,7 @@ struct PublishResult {
 
 - Credit is returned after `publish()`.
 - Credit is derived from `capacity - content.size()`.
-- Lane capacity is currently fixed by `MAX_LANE_CAPACITY`.
+- Lane capacity is currently fixed by `DEFAULT_LANE_CAPACITY`.
 
 **Future possibilities**:
 

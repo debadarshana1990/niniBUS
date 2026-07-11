@@ -51,7 +51,7 @@ to be able to default-construct a `Lane`.
 That is why `Lane` keeps a default constructor:
 
 ```cpp
-Lane(uint32_t cap = MAX_LANE_CAPACITY);
+Lane(uint32_t cap = DEFAULT_LANE_CAPACITY);
 ```
 
 Without a default constructor, `operator[]` cannot create a missing `Lane`, and

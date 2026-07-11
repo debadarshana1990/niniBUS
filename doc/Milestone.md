@@ -77,7 +77,7 @@ TODO:
 - [ ] Make API naming and parameter names consistent.
 - [ ] Decide whether `subscribe()` should return `bool` or a result enum.
 - [ ] Decide whether unused enum values should be implemented or removed.
-- [ ] Review which `Lane` helper methods should stay public versus private.
+- [x] Make lane size, capacity, and credit helpers private.
 - [ ] Add unit tests for publish/receive FIFO behavior.
 - [ ] Add unit tests for multiple independent lanes.
 - [ ] Add unit tests for receiving from an empty lane.
@@ -102,6 +102,14 @@ architecture.
 
 Current status: started.
 
+Implemented so far:
+
+- Lanes are bounded by `DEFAULT_LANE_CAPACITY`.
+- `Lane::push()` returns `PublishStatus::LaneFull` when the lane has no
+  remaining credit.
+- `PublishResult::Credit` gives publisher feedback after each publish attempt.
+- Example tests cover lane capacity, lane credit, and full-lane behavior.
+
 TODO:
 
 - [x] Start V1 officially.
@@ -111,17 +119,18 @@ TODO:
 - [x] Move publish/receive queue behavior into `Lane::push()` and
       `Lane::pop()`.
 - [x] Document that queue behavior changes should stay isolated in `Lane`.
-- [ ] Decide whether lanes should have bounded queues.
-- [ ] Add optional queue capacity per lane.
-- [ ] Decide whether `PublishStatus::LaneFull` behavior is complete.
+- [x] Decide whether lanes should have bounded queues.
+- [x] Add default bounded lane capacity.
+- [x] Implement `PublishStatus::LaneFull`.
+- [x] Add lane credit through `PublishResult::Credit`.
+- [x] Add publisher feedback for accepted and rejected messages.
 - [ ] Decide whether `PublishStatus::LaneNotFound` is needed.
-- [ ] Make lane size, capacity, and credit helpers private unless a public
-      statistics API is added.
-- [ ] Add queue size/statistics accessors.
+- [x] Make lane size, capacity, and credit helpers private.
+- [ ] Decide whether public queue size/statistics accessors are needed.
 - [ ] Add lane existence/query helpers if useful.
-- [ ] Add tests for queue capacity.
-- [ ] Add tests for publish result statuses.
-- [ ] Document back-pressure behavior.
+- [x] Add tests for queue capacity.
+- [x] Add tests for publish result statuses.
+- [x] Document basic back-pressure behavior.
 
 Possible API shape:
 
@@ -137,8 +146,10 @@ if (result.Status == PublishStatus::LaneFull)
 Definition of done:
 
 - Queue capacity behavior is clear.
-- Publish result enums are either fully implemented or simplified.
-- Queue statistics are tested and documented.
+- Publish result statuses used by the implementation are tested.
+- Lane credit and `LaneFull` behavior are documented.
+- Any unused result statuses are either implemented, removed, or explicitly
+  documented as reserved.
 
 ## V2 - Embedded Optimization
 

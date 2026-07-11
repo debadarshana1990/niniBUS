@@ -1,6 +1,6 @@
 #include "Lane.h"
 
-PublishResult Lane::push(std::string message)
+PublishResult Lane::push(const std::string& message)
 {
     if (qsize() < getCapacity())
     {

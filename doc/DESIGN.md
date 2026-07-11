@@ -74,15 +74,16 @@ Public functions today:
 
 - `push(message)`: append a message to the lane queue.
 - `pop(message)`: remove the oldest queued message into the output string.
+
+Private helper functions:
+
 - `qsize()`: return the current queued message count.
 - `getCapacity()`: return the lane capacity.
 - `getCredit()`: return remaining queue capacity.
 
-The queue data itself remains private. `qsize()`, `getCapacity()`, and
-`getCredit()` are currently public helper functions because `Lane::push()` uses
-them and tests or future diagnostics may need similar information. If the API
-should expose fewer lane details later, these helpers can be made private or
-replaced with a smaller statistics interface.
+The queue data and capacity helpers are private. `niniBUS` does not inspect
+lane size or capacity directly; it delegates to `Lane::push()` and
+`Lane::pop()`.
 
 `Lane::getCredit()` returns remaining queue capacity:
 
@@ -126,7 +127,7 @@ Creation flow:
 Current implementation:
 
 - `publish()` creates a missing lane with the default `Lane` constructor, so it
-  uses `MAX_LANE_CAPACITY`.
+  uses `DEFAULT_LANE_CAPACITY`.
 - `subscribe()` also creates missing lanes with the default `Lane` constructor.
 - `receive()` creates a missing lane by calling `subscribe()` and returns
   `ReceiveStatus::LazyLaneCreated`.
@@ -275,10 +276,9 @@ Current behavior:
 
 ## Recommended Next Improvements
 
-1. Decide whether lane capacity should stay fixed at `MAX_LANE_CAPACITY` or
+1. Decide whether lane capacity should stay fixed at `DEFAULT_LANE_CAPACITY` or
    become configurable per lane.
-2. Decide whether `qsize()`, `getCapacity()`, and `getCredit()` should remain
-   public helpers or move behind a smaller lane statistics API.
+2. Decide whether public lane statistics are needed.
 3. Remove unused result values or implement the conditions that produce them.
 4. Add mutex protection if the bus will be used from multiple threads.
 5. Decide whether the bus should remain a competing-consumer queue or become a

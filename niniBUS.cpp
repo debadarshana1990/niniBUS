@@ -2,7 +2,7 @@
 
 // Define static member
 
-PublishResult niniBUS::publish(lane_t laneID, std::string message)
+PublishResult niniBUS::publish(lane_t laneID, const std::string& message)
 {
     ///check if present in the map
     auto it = lane_map_.find(laneID);
