@@ -261,8 +261,8 @@ helper functions instead of allowing direct mutation.
 Current helpers:
 
 ```cpp
-void push(std::string message);
-std::string pop();
+PublishResult push(std::string message);
+ReceiveStatus pop(std::string& message);
 uint32_t qsize() const;
 uint32_t getCapacity() const;
 uint32_t getCredit() const;
@@ -271,22 +271,86 @@ uint32_t getCredit() const;
 **Rationale**:
 
 - The lane owns its queue invariants.
-- `niniBUS` should ask the lane for size, capacity, credit, push, and pop
-  behavior instead of reaching into the deque directly.
+- `niniBUS` should ask the lane to push and pop instead of reaching into the
+  deque directly.
+- Size, capacity, and credit calculations belong with the lane because they are
+  derived from lane-local queue state.
 - This keeps future FIFO changes localized inside `Lane`.
 
 **Consequences**:
 
-- `niniBUS` uses `qsize()`, `getCapacity()`, `push()`, and `pop()`.
+- `niniBUS` uses `push()` and `pop()` instead of mutating the lane queue
+  directly.
+- `qsize()`, `getCapacity()`, and `getCredit()` are currently public helpers,
+  but the core bus no longer needs to call them for publish/receive behavior.
 - Queue implementation details are less exposed.
 - Future bounded FIFO or custom queue work can start inside `Lane`.
 
 **Revisit when**:
 
-- `Lane` grows complex enough to deserve its own `.cpp` file.
 - The bus needs more detailed queue inspection APIs.
+- The helper methods should be narrowed, made private, or replaced by a stats
+  API.
 
-## DD-009 - Lazy Lane Creation
+## DD-009 - Separate Lane Implementation
+
+**Status**: accepted
+
+**Decision**: keep lane behavior in separate `Lane.h` / `Lane.cpp` files.
+
+**Rationale**:
+
+- Lane queue behavior is its own responsibility.
+- Separating `Lane` from `niniBUS` keeps the bus implementation small.
+- Future queue changes should mostly happen in `Lane.cpp`.
+- The bus should not need to understand queue internals to publish or receive.
+
+**Consequences**:
+
+- `Lane.cpp` owns the implementation of `push()` and `pop()`.
+- `niniBUS.cpp` owns lane lookup, lazy lane creation, and delegation.
+- The root Makefile must compile both `niniBUS.cpp` and `Lane.cpp` into
+  `libniniBUS.a`.
+
+**Revisit when**:
+
+- More lane policies require additional classes.
+- The project introduces multiple lane implementations.
+
+## DD-010 - Keep `niniBUS` Boring
+
+**Status**: accepted
+
+**Decision**: keep `niniBUS::publish()` and `niniBUS::receive()` boring:
+find or create the lane, then delegate to `Lane::push()` or `Lane::pop()`.
+
+**Rationale**:
+
+- `niniBUS` should not know how a lane implements push/pop behavior.
+- Capacity checks, queue mutation, credit calculation, and empty-lane pop
+  behavior belong to `Lane`.
+- If push/pop behavior changes later, the change should mostly stay inside
+  `Lane.cpp`.
+- This keeps the bus focused on routing by lane ID.
+
+**Consequences**:
+
+- `publish()` delegates successful publish behavior to `Lane::push()`.
+- `receive()` delegates pop and empty-queue behavior to `Lane::pop()`.
+- `niniBUS` stays easier to read and reason about.
+
+**Current implementation note**:
+
+- `receive()` already delegates queue behavior to `Lane::pop()`.
+- `publish()` delegates capacity checks, queue mutation, credit calculation, and
+  publish status to `Lane::push()`.
+
+**Revisit when**:
+
+- Lane policies expand beyond simple FIFO.
+- The bus starts accumulating queue-specific logic again.
+
+## DD-011 - Lazy Lane Creation
 
 **Status**: accepted
 
@@ -310,7 +374,7 @@ to, or received from.
 - Strict lane registration is required.
 - Missing-lane receive should be an error instead of creating a lane.
 
-## DD-010 - Result Types For Publish And Receive
+## DD-012 - Result Types For Publish And Receive
 
 **Status**: current
 
@@ -356,7 +420,7 @@ enum class ReceiveStatus {
 - Placeholder enum values remain unused after V0.1.
 - `subscribe()` is converted from `bool` to a result enum.
 
-## DD-011 - Single-Threaded For V0
+## DD-013 - Single-Threaded For V0
 
 **Status**: accepted
 
@@ -379,7 +443,7 @@ enum class ReceiveStatus {
 - V3 concurrency starts.
 - The example or tests introduce multiple threads.
 
-## DD-012 - Static Library And Separate Example
+## DD-014 - Static Library And Separate Example
 
 **Status**: accepted
 
@@ -406,7 +470,7 @@ enum class ReceiveStatus {
 - Install/package targets are added.
 - A higher-level build system is introduced.
 
-## DD-013 - Defer Memory Optimization
+## DD-015 - Defer Memory Optimization
 
 **Status**: deferred
 
@@ -429,7 +493,7 @@ prefer clear implementation over premature compactness.
 - The project defines hard memory limits.
 - V2 starts.
 
-## DD-014 - Lane Credit
+## DD-016 - Lane Credit
 
 **Status**: current
 
@@ -492,7 +556,7 @@ struct PublishResult {
 - The bus adds blocking publish or receive APIs.
 - Back-pressure policy becomes more complex than `LaneFull`.
 
-## DD-015 - Documentation Tracks The Code
+## DD-017 - Documentation Tracks The Code
 
 **Status**: accepted
 
@@ -521,13 +585,11 @@ especially when API return types or ownership models change.
 
 - Should `subscribe()` keep returning `bool`, or should it return a dedicated
   result enum?
-- Should the destructor print shutdown messages, or should library cleanup be
-  quiet by default?
+- Should the commented destructor messages be removed entirely, or kept as
+  source-only notes?
 - Should unused enum values be removed until they are implemented?
 - Should missing-lane receive create a lane, or should it return a strict
   not-found result?
-- Should the example be updated to check `ReceiveStatus` before printing the
-  output string?
 
 ## Design Philosophy
 
@@ -543,3 +605,52 @@ especially when API return types or ownership models change.
 Every feature added should answer one question:
 
 Does this make the bus better, or only more complicated?
+
+## DD-018 - Lane Owns Queue Behavior For V1
+
+**Status**: accepted
+
+**Decision**: starting in V1, `Lane` is the owner of lane-local queue behavior.
+`niniBUS::publish()` and `niniBUS::receive()` should stay boring: find or
+create the lane, then delegate to `Lane::push()` or `Lane::pop()`.
+
+`niniBUS` should not know how a lane stores messages, checks capacity, computes
+credit, detects an empty queue, pushes a message, or pops a message. Those
+details belong inside the `Lane` implementation.
+
+**Rationale**:
+
+- `Lane` now has its own implementation file, so queue behavior has a natural
+  home in `Lane.cpp`.
+- Push and pop are lane-local operations, not bus-routing operations.
+- Keeping push/pop isolated means future queue changes should mostly touch
+  `Lane`, not `niniBUS`.
+- `niniBUS` should remain responsible for lane lookup, lazy lane creation, and
+  API-level routing by lane ID.
+- Capacity, size, credit, and queue content are lane internals. The bus should
+  not depend on those details.
+
+**Consequences**:
+
+- `Lane::push()` owns publish-side lane behavior: capacity checks, queue
+  mutation, credit calculation, and publish status.
+- `Lane::pop()` owns receive-side lane behavior: empty-queue checks, output
+  message mutation, FIFO removal, and receive status.
+- `niniBUS.cpp` should be intentionally plain and easy to read.
+- `Lane` helper methods such as size, capacity, and credit should be private
+  unless there is a clear public API reason to expose them.
+- If FIFO storage changes from `std::deque` to another structure, the change
+  should be isolated to `Lane`.
+
+**V1 rule**:
+
+Do not add queue-specific logic back into `niniBUS::publish()` or
+`niniBUS::receive()`. If a change is about how messages are accepted, rejected,
+stored, credited, or removed from a lane, make that change in `Lane`.
+
+**Revisit when**:
+
+- The project introduces multiple lane implementations.
+- Public lane statistics become part of the official API.
+- A future transport layer needs a different separation between routing and
+  storage.

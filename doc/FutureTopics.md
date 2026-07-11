@@ -72,24 +72,31 @@ Possible policies:
 Possible API:
 
 ```cpp
-enum class PublishResult {
+enum class PublishStatus {
     Ok,
     LaneFull,
     LaneNotFound
+};
+
+struct PublishResult {
+    uint32_t Credit;
+    PublishStatus Status;
 };
 ```
 
 Questions:
 
-- What does "full" mean for an unbounded `std::deque`?
-- Should V1 introduce bounded queues first?
-- Should `LaneFull` remain in the API before the condition is implemented?
+- Should the current fixed lane capacity remain global or become configurable?
+- Should full lanes reject new messages, drop old messages, or use a
+  configurable policy?
+- Should `LaneFull` remain simple, or should it carry richer back-pressure
+  information?
 - Should dropped-message counts be tracked?
 
 Promotion trigger:
 
-- Move to V1 when bounded queues are added or when slow consumers become a real
-  use case.
+- Move to V1 when the current `LaneFull` behavior is not enough or when slow
+  consumers become a real use case.
 
 ### Lane Statistics
 

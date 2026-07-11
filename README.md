@@ -5,6 +5,8 @@
 It stores string messages in numeric lanes. Callers can publish messages to a
 lane, subscribe to a lane, and receive queued messages from a lane.
 
+Current project phase: V1 - Smarter Bus.
+
 ## API
 
 The public API is declared in `niniBUS.h`:
@@ -41,8 +43,9 @@ bool subscribe(lane_t laneID);
 - Each lane stores messages in a FIFO `std::deque<std::string>`.
 - Lanes use `MAX_LANE_CAPACITY` as the intended default capacity.
 - The lane ID is stored as the key in the bus map, not inside the `Lane` object.
-- `Lane` keeps its queue internals private and exposes helper functions for
-  pushing, popping, checking size, capacity, and credit.
+- `Lane` keeps its queue internals private and owns push/pop behavior.
+- `niniBUS` stays intentionally small: it finds or creates a lane, then
+  delegates queue behavior to `Lane`.
 - `publish()` appends a message to a lane and returns `PublishResult`.
 - `PublishResult::Status` says whether publish succeeded or the lane was full.
 - `PublishResult::Credit` reports remaining lane capacity after the publish
@@ -78,8 +81,11 @@ creates missing lanes lazily instead of returning that value.
 
 ## Repository Layout
 
-- `niniBUS.h` - public API, result enums, and `Lane` structure.
-- `niniBUS.cpp` - message bus implementation.
+- `niniBUS.h` - public bus API and lane registry.
+- `niniBUS.cpp` - bus map lookup, lazy lane creation, and delegation.
+- `Lane.h` - lane API and lane-local queue state.
+- `Lane.cpp` - lane-local push/pop behavior.
+- `status.h` - publish and receive status/result types.
 - `Makefile` - builds the `niniBUS` static library.
 - `example/hello.cpp` - assert-based example tests.
 - `example/Makefile` - builds and runs `hello.cpp`.
@@ -180,12 +186,12 @@ make clean
 - `subscribe()` only creates a lane; it does not track subscriber count.
 - `PublishStatus::LaneNotFound` and `ReceiveStatus::LaneNotFound` are defined
   but not currently produced by the implementation.
-- Lane capacity is intended to default to `MAX_LANE_CAPACITY`, but current lane
-  creation paths should be normalized so subscribe-created lanes use the same
-  default behavior.
-- Lane internals are private; callers interact through the bus API rather than
-  directly mutating lane queues.
-- Current `subscribe()` lane creation should be reviewed because `Lane` no
-  longer stores lane ID and its constructor argument now represents capacity.
+- Lane capacity currently defaults to `MAX_LANE_CAPACITY`; per-lane capacity
+  configuration is not exposed through the bus API yet.
+- Lane queue internals are private; callers interact through the bus API rather
+  than directly mutating lane queues.
+- `niniBUS::publish()` and `niniBUS::receive()` are intentionally thin: they
+  find or create a lane and delegate queue behavior to `Lane::push()` or
+  `Lane::pop()`.
 
 See [doc/DESIGN.md](doc/DESIGN.md) and the files in [doc/](doc/) for more detail.

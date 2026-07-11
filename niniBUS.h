@@ -1,67 +1,12 @@
 #pragma once
 #include <iostream>
 #include <string>
-#include <stdint.h>
 #include <unordered_map>
-#include <deque>
+#include "Lane.h"
+#include "status.h"
 
-#define MAX_LANE_CAPACITY (uint32_t)10
 using lane_t = uint32_t;
 
-
-enum class PublishStatus {
-    Ok,
-    LaneNotFound,
-    LaneFull
-};
-enum class ReceiveStatus {
-    Ok,
-    LaneNotFound,
-    LaneEmpty,
-    LazyLaneCreated
-};
-struct PublishResult 
-{
-    uint32_t Credit;
-    PublishStatus Status;
-};
-
-
-
-class Lane
-{
-
-    // Message structure definition
-    uint32_t capacity;
-    std::deque<std::string> content;
-public:
-   // Lane() : capacity(0) {}
-    Lane( uint32_t cap = MAX_LANE_CAPACITY) : capacity(cap) {};
-    Lane(const Lane& other) = default;
-    uint32_t getCredit() const 
-    { 
-        return capacity - content.size(); 
-    }
-    ~Lane(){}
-    void push(std::string message)
-    {
-        content.push_back(message);
-    };
-    std::string pop()
-    {
-        std::string msg = content.front();
-        content.pop_front();
-        return msg;
-    }
-    uint32_t qsize() const
-    {
-        return content.size();
-    }
-    uint32_t getCapacity() const
-    {
-        return capacity;
-    }
-};
 class niniBUS
 {
 private:

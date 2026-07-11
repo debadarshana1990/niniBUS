@@ -9,10 +9,14 @@ message queue, and `receive()` removes one message from that queue.
 
 ## Source Files
 
-- `niniBUS.h` declares the public API, result enums, and internal `Lane`
-  container.
-- `niniBUS.cpp` implements lane creation, publishing, subscribing, and receiving.
-- `Makefile` builds `niniBUS.cpp` into the static library `libniniBUS.a`.
+- `status.h` declares publish/receive statuses and `PublishResult`.
+- `Lane.h` declares the `Lane` class.
+- `Lane.cpp` implements lane-local queue behavior.
+- `niniBUS.h` declares the public bus API.
+- `niniBUS.cpp` implements lane lookup, lazy lane creation, and delegation to
+  `Lane`.
+- `Makefile` builds `niniBUS.cpp` and `Lane.cpp` into the static library
+  `libniniBUS.a`.
 - `example/hello.cpp` demonstrates single-threaded usage and assert-based
   behavior checks.
 - `example/Makefile` builds the example executable and links it against
@@ -52,7 +56,7 @@ bool subscribe(lane_t laneID);
 
 ### `Lane`
 
-`Lane` stores queued messages for one lane.
+`Lane` stores queued messages for one lane and owns lane-local queue behavior.
 
 Private fields:
 
@@ -66,13 +70,19 @@ duplicate state.
 `Lane` can be constructed with a capacity and copied. It does not own external
 resources.
 
-Public helper functions:
+Public functions today:
 
 - `push(message)`: append a message to the lane queue.
-- `pop()`: remove and return the oldest queued message.
+- `pop(message)`: remove the oldest queued message into the output string.
 - `qsize()`: return the current queued message count.
 - `getCapacity()`: return the lane capacity.
 - `getCredit()`: return remaining queue capacity.
+
+The queue data itself remains private. `qsize()`, `getCapacity()`, and
+`getCredit()` are currently public helper functions because `Lane::push()` uses
+them and tests or future diagnostics may need similar information. If the API
+should expose fewer lane details later, these helpers can be made private or
+replaced with a smaller statistics interface.
 
 `Lane::getCredit()` returns remaining queue capacity:
 
@@ -92,6 +102,10 @@ The map key is the lane ID. The map value is the `Lane` object for that lane.
 Because lanes are stored by value, the current implementation does not allocate
 lanes with `new` and does not need to manually delete lane objects.
 
+`niniBUS` is intentionally thin. It should not know the details of how lane
+queues push, pop, enforce capacity, or compute status. Its job is to locate or
+create the correct lane and delegate queue behavior to `Lane`.
+
 ## Lane Creation
 
 Lanes are created lazily.
@@ -109,15 +123,13 @@ Creation flow:
 3. Store the lane in `lane_map_`.
 4. Use the stored lane for later operations.
 
-Current implementation caveat:
+Current implementation:
 
 - `publish()` creates a missing lane with the default `Lane` constructor, so it
   uses `MAX_LANE_CAPACITY`.
-- `subscribe()` currently calls `Lane(laneID)`. Since `Lane` no longer stores a
-  lane ID and its constructor argument is capacity, this makes the subscribed
-  lane's capacity depend on the lane ID.
-- This should be normalized in code later if every lane is meant to use
-  `MAX_LANE_CAPACITY` by default.
+- `subscribe()` also creates missing lanes with the default `Lane` constructor.
+- `receive()` creates a missing lane by calling `subscribe()` and returns
+  `ReceiveStatus::LazyLaneCreated`.
 
 ## Publish Flow
 
@@ -126,15 +138,16 @@ Current implementation caveat:
 Algorithm:
 
 1. Look up `laneID` in `lane_map_`.
-2. If the lane exists but `qsize() >= getCapacity()`, return
-   `PublishStatus::LaneFull` with zero credit.
-3. If the lane exists and has credit, call `Lane::push(message)`.
-4. If the lane does not exist, construct a new `Lane`, insert it into the map,
+2. If the lane exists, call `Lane::push(message)` and return its result.
+3. If the lane does not exist, construct a new `Lane`, insert it into the map,
    call `Lane::push(message)`, and return success.
-5. Return `PublishResult{Credit, PublishStatus::Ok}` on success.
 
 Messages are pushed to the back of the deque, so delivery order is FIFO.
 Credit is reported after the publish attempt.
+
+`Lane::push()` owns capacity checks, queue mutation, credit calculation, and
+publish status. This keeps `niniBUS::publish()` boring: it only finds or creates
+the lane and delegates the lane-local behavior.
 
 Complexity:
 
@@ -175,11 +188,11 @@ Algorithm:
    - Print an error message.
    - Call `subscribe(laneID)` so the lane exists for future messages.
    - Return `ReceiveStatus::LazyLaneCreated`.
-4. If the lane queue is empty:
-   - Print an error message.
-   - Return `ReceiveStatus::LaneEmpty`.
-5. Call `Lane::pop()` and copy the returned oldest message into `message`.
-7. Return `ReceiveStatus::Ok`.
+4. Call `Lane::pop(message)`.
+5. Return the `ReceiveStatus` produced by `Lane::pop()`.
+
+`Lane::pop()` owns the empty-queue check and output-message mutation. This keeps
+receive behavior localized to the lane.
 
 `receive()` is destructive. Once a message is received, it is no longer
 available.
@@ -226,9 +239,8 @@ files from the example folder.
 Lanes are stored by value in `lane_map_`, so normal container destruction
 releases all lane objects when the bus is destroyed.
 
-The `niniBUS` destructor currently prints shutdown messages. That makes object
-destruction visible in the example, but it may be surprising for users who treat
-the bus as a quiet library type.
+The `niniBUS` destructor is currently quiet. Older shutdown messages are left as
+comments in the source, but the library does not print during destruction.
 
 ## Thread Safety
 
@@ -265,8 +277,8 @@ Current behavior:
 
 1. Decide whether lane capacity should stay fixed at `MAX_LANE_CAPACITY` or
    become configurable per lane.
-2. Normalize lane creation so `publish()` and `subscribe()` use the same default
-   capacity behavior.
+2. Decide whether `qsize()`, `getCapacity()`, and `getCredit()` should remain
+   public helpers or move behind a smaller lane statistics API.
 3. Remove unused result values or implement the conditions that produce them.
 4. Add mutex protection if the bus will be used from multiple threads.
 5. Decide whether the bus should remain a competing-consumer queue or become a

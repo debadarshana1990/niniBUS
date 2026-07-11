@@ -7,7 +7,7 @@ ARFLAGS := rcs
 
 LIB := libniniBUS.a
 
-LIB_SRCS := niniBUS.cpp
+LIB_SRCS := niniBUS.cpp Lane.cpp
 LIB_OBJS := $(LIB_SRCS:.cpp=.o)
 
 DEPS := $(LIB_OBJS:.o=.d)

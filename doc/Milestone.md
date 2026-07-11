@@ -12,11 +12,13 @@ ideas document instead of expanding the current scope.
 - Measure before optimizing.
 - Keep examples and documentation aligned with the code.
 
+Current active milestone: V1 - Smarter Bus.
+
 ## V0 - Core Bus
 
 Objective: build the smallest working in-process message bus.
 
-Current status: mostly complete.
+Current status: complete.
 
 TODO:
 
@@ -36,9 +38,14 @@ TODO:
 - [x] Make `make all` remove `.o` and `.d` metadata files.
 - [x] Update `README.md`.
 - [x] Update `DESIGN.md`.
-- [x] Make the example check `ReceiveResult` before printing received data.
-- [x] Decide whether the destructor should print messages or stay quiet. : Its humor, let it be 
+- [x] Make the example check `ReceiveStatus` before using received data.
+- [x] Document that the current destructor is quiet.
 - [x] Remove unused includes such as `<vector>` and `<queue>`.
+- [x] Split lane implementation into `Lane.h` and `Lane.cpp`.
+- [x] Move queue push/pop behavior into `Lane`.
+- [x] Keep lane ID as the map key instead of storing it inside `Lane`.
+- [x] Keep `niniBUS::publish()` and `niniBUS::receive()` as lookup/delegation
+      code.
 
 Out of scope:
 
@@ -70,6 +77,7 @@ TODO:
 - [ ] Make API naming and parameter names consistent.
 - [ ] Decide whether `subscribe()` should return `bool` or a result enum.
 - [ ] Decide whether unused enum values should be implemented or removed.
+- [ ] Review which `Lane` helper methods should stay public versus private.
 - [ ] Add unit tests for publish/receive FIFO behavior.
 - [ ] Add unit tests for multiple independent lanes.
 - [ ] Add unit tests for receiving from an empty lane.
@@ -92,12 +100,23 @@ Definition of done:
 Objective: improve the single-threaded bus without changing its core
 architecture.
 
+Current status: started.
+
 TODO:
 
+- [x] Start V1 officially.
+- [x] Split lane implementation into separate `Lane.h` and `Lane.cpp` files.
+- [x] Keep `niniBUS::publish()` and `niniBUS::receive()` as boring
+      lookup/delegation functions.
+- [x] Move publish/receive queue behavior into `Lane::push()` and
+      `Lane::pop()`.
+- [x] Document that queue behavior changes should stay isolated in `Lane`.
 - [ ] Decide whether lanes should have bounded queues.
 - [ ] Add optional queue capacity per lane.
-- [ ] Implement `PublishResult::LaneFull` if bounded queues are added.
-- [ ] Decide whether `PublishResult::LaneNotFound` is needed.
+- [ ] Decide whether `PublishStatus::LaneFull` behavior is complete.
+- [ ] Decide whether `PublishStatus::LaneNotFound` is needed.
+- [ ] Make lane size, capacity, and credit helpers private unless a public
+      statistics API is added.
 - [ ] Add queue size/statistics accessors.
 - [ ] Add lane existence/query helpers if useful.
 - [ ] Add tests for queue capacity.
@@ -109,7 +128,7 @@ Possible API shape:
 ```cpp
 PublishResult result = bus.publish(lane, msg);
 
-if (result == PublishResult::LaneFull)
+if (result.Status == PublishStatus::LaneFull)
 {
     // Handle back pressure.
 }
