@@ -120,9 +120,13 @@ A lane can be created by:
 
 Creation flow:
 
-1. Call `try_emplace(laneID, lane_t())`.
+1. Call `try_emplace(laneID)`.
 2. If the lane is missing, construct and insert the lane.
 3. Use the returned iterator to access the stored lane.
+
+Passing only `laneID` lets `std::unordered_map` default-construct the stored
+`lane_t` directly when the key is missing. The code does not need to create and
+pass an explicit temporary `lane_t()`.
 
 Current implementation:
 

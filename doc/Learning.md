@@ -85,7 +85,7 @@ the lane exists.
 Current `publish()` does this:
 
 ```cpp
-auto [it, inserted] = lane_map_.try_emplace(laneID, lane_t());
+auto [it, inserted] = lane_map_.try_emplace(laneID);
 return it->second.push(message);
 ```
 
@@ -96,8 +96,8 @@ calculation, and publish status.
 `try_emplace()` returns an iterator to the lane either way:
 
 1. If the lane already exists, the iterator points to the existing lane.
-2. If the lane does not exist, the map creates it and returns an iterator to the
-   new lane.
+2. If the lane does not exist, the map default-constructs it in place and
+   returns an iterator to the new lane.
 
 The `inserted` flag says whether a new lane was created. `publish()` does not
 currently need that flag, but it is available if later code wants to treat a
@@ -136,13 +136,14 @@ assignment. It works, but it is more work than the operation needs.
 `try_emplace()` expresses the real intent directly:
 
 ```cpp
-auto [it, inserted] = lane_map_.try_emplace(laneID, lane_t());
+auto [it, inserted] = lane_map_.try_emplace(laneID);
 return it->second.push(message);
 ```
 
 It looks for the key once, creates the lane only if it is missing, and gives the
-code an iterator to the stored lane. After that, `it->second.push(message)`
-mutates the actual lane inside the map.
+code an iterator to the stored lane. Because no constructor arguments are passed
+after `laneID`, the map uses `lane_t`'s default constructor directly in the map.
+After that, `it->second.push(message)` mutates the actual lane inside the map.
 
 The code could also be written directly as:
 
@@ -167,7 +168,7 @@ if (it != lane_map_.end())
 When creating a lane:
 
 ```cpp
-auto [it, inserted] = lane_map_.try_emplace(laneID, lane_t());
+auto [it, inserted] = lane_map_.try_emplace(laneID);
 return it->second.push(message);
 ```
 

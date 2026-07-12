@@ -5,7 +5,7 @@
 PublishResult niniBUS::publish(laneID_t laneID, const std::string& message)
 {
     // Check if lane exists, if not create it
-    auto [it, inserted] = lane_map_.try_emplace(laneID, lane_t());
+    auto [it, inserted] = lane_map_.try_emplace(laneID);
 
     return it->second.push(message);
 }
@@ -13,8 +13,8 @@ PublishResult niniBUS::publish(laneID_t laneID, const std::string& message)
 bool niniBUS::subscribe(laneID_t laneID)
 {
     // Check if the lane ID exists, if not create it
-    lane_map_.try_emplace(laneID, lane_t());
-    
+    lane_map_.try_emplace(laneID);
+
     // Return true as long as the subscription is successful (whether new or existing)
     return true;
 }

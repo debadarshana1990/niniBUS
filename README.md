@@ -12,7 +12,7 @@ Current project phase: V1 - Smarter Bus.
 The public API is declared in `niniBUS.h`:
 
 ```cpp
-using lane_t = uint32_t;
+using laneID_t = uint32_t;
 
 enum class PublishStatus {
     Ok,
@@ -32,9 +32,9 @@ struct PublishResult {
     PublishStatus Status;
 };
 
-PublishResult publish(lane_t laneID, std::string message);
-ReceiveStatus receive(lane_t laneID, std::string& message);
-bool subscribe(lane_t laneID);
+PublishResult publish(laneID_t laneID, const std::string& message);
+ReceiveStatus receive(laneID_t laneID, std::string& message);
+bool subscribe(laneID_t laneID);
 ```
 
 ## How It Works
@@ -42,10 +42,11 @@ bool subscribe(lane_t laneID);
 - A lane is created lazily when it is first published to or subscribed to.
 - Each lane stores messages in a FIFO `std::deque<std::string>`.
 - Lanes use `DEFAULT_LANE_CAPACITY` as the default bounded capacity.
-- The lane ID is stored as the key in the bus map, not inside the `Lane` object.
-- `Lane` keeps its queue internals private and owns push/pop behavior.
+- The lane ID is stored as the key in the bus map, not inside the `lane_t`
+  object.
+- `lane_t` keeps its queue internals private and owns push/pop behavior.
 - `niniBUS` stays intentionally small: it finds or creates a lane, then
-  delegates queue behavior to `Lane`.
+  delegates queue behavior to `lane_t`.
 - `publish()` appends a message to a lane and returns `PublishResult`.
 - `PublishResult::Status` says whether publish succeeded or the lane was full.
 - `PublishResult::Credit` reports remaining lane capacity after the publish
@@ -191,7 +192,7 @@ make clean
 - Lane queue internals are private; callers interact through the bus API rather
   than directly mutating lane queues.
 - `niniBUS::publish()` and `niniBUS::receive()` are intentionally thin: they
-  find or create a lane and delegate queue behavior to `Lane::push()` or
-  `Lane::pop()`.
+  find or create a lane and delegate queue behavior to `lane_t::push()` or
+  `lane_t::pop()`.
 
 See [doc/DESIGN.md](doc/DESIGN.md) and the files in [doc/](doc/) for more detail.

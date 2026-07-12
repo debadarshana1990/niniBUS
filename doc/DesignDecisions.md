@@ -74,7 +74,7 @@ process lifetime, and connection management.
 **Rationale**:
 
 Names such as topic, sensor, diagnostics, command, CAN, or Ethernet carry domain
-meaning. `Lane` is intentionally neutral: it is only an independent
+meaning. The lane abstraction is intentionally neutral: it is only an independent
 communication path. Applications assign meaning to lane IDs.
 
 **Consequences**:
@@ -282,7 +282,7 @@ uint32_t getCredit() const;
   deque directly.
 - Size, capacity, and credit calculations belong with the lane because they are
   derived from lane-local queue state.
-- This keeps future FIFO changes localized inside `Lane`.
+- This keeps future FIFO changes localized inside `lane_t`.
 
 **Consequences**:
 
@@ -290,7 +290,7 @@ uint32_t getCredit() const;
   directly.
 - `qsize()`, `getCapacity()`, and `getCredit()` are private helpers.
 - Queue implementation details are less exposed.
-- Future bounded FIFO or custom queue work can start inside `Lane`.
+- Future bounded FIFO or custom queue work can start inside `lane_t`.
 
 **Revisit when**:
 
@@ -306,7 +306,7 @@ uint32_t getCredit() const;
 **Rationale**:
 
 - Lane queue behavior is its own responsibility.
-- Separating `Lane` from `niniBUS` keeps the bus implementation small.
+- Separating lane behavior from `niniBUS` keeps the bus implementation small.
 - Future queue changes should mostly happen in `Lane.cpp`.
 - The bus should not need to understand queue internals to publish or receive.
 
@@ -333,7 +333,7 @@ find or create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
 
 - `niniBUS` should not know how a lane implements push/pop behavior.
 - Capacity checks, queue mutation, credit calculation, and empty-lane pop
-  behavior belong to `Lane`.
+  behavior belong to `lane_t`.
 - If push/pop behavior changes later, the change should mostly stay inside
   `Lane.cpp`.
 - This keeps the bus focused on routing by lane ID.
@@ -623,11 +623,11 @@ details belong inside the `lane_t` implementation.
 
 **Rationale**:
 
-- `Lane` now has its own implementation file, so queue behavior has a natural
+- `lane_t` now has its own implementation file, so queue behavior has a natural
   home in `Lane.cpp`.
 - Push and pop are lane-local operations, not bus-routing operations.
 - Keeping push/pop isolated means future queue changes should mostly touch
-  `Lane`, not `niniBUS`.
+  `lane_t`, not `niniBUS`.
 - `niniBUS` should remain responsible for lane lookup, lazy lane creation, and
   API-level routing by lane ID.
 - Capacity, size, credit, and queue content are lane internals. The bus should
@@ -669,7 +669,7 @@ lane and then delegate to the stored lane object.
 Current publish-side pattern:
 
 ```cpp
-auto [it, inserted] = lane_map_.try_emplace(laneID, lane_t());
+auto [it, inserted] = lane_map_.try_emplace(laneID);
 return it->second.push(message);
 ```
 
@@ -683,8 +683,9 @@ return it->second.push(message);
   for the lane, then search again to insert or access the missing lane.
 - `operator[]` also default-inserts a value before assignment, which can create
   extra construction and assignment work.
-- `try_emplace()` creates the mapped lane only when the key is missing and
-  returns the iterator needed for the next step.
+- `try_emplace(laneID)` creates the mapped lane only when the key is missing,
+  default-constructs it in place, and returns the iterator needed for the next
+  step.
 
 **Consequences**:
 
