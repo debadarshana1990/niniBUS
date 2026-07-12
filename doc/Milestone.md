@@ -22,8 +22,8 @@ Current status: complete.
 
 TODO:
 
+- [x] Define `laneID_t`.
 - [x] Define `lane_t`.
-- [x] Define `Lane`.
 - [x] Store messages per lane.
 - [x] Create lanes lazily.
 - [x] Implement `publish()`.
@@ -39,11 +39,11 @@ TODO:
 - [x] Update `README.md`.
 - [x] Update `DESIGN.md`.
 - [x] Make the example check `ReceiveStatus` before using received data.
-- [x] Document that the current destructor is quiet.
+- [x] Document that custom destructors are not required right now.
 - [x] Remove unused includes such as `<vector>` and `<queue>`.
 - [x] Split lane implementation into `Lane.h` and `Lane.cpp`.
-- [x] Move queue push/pop behavior into `Lane`.
-- [x] Keep lane ID as the map key instead of storing it inside `Lane`.
+- [x] Move queue push/pop behavior into `lane_t`.
+- [x] Keep lane ID as the map key instead of storing it inside `lane_t`.
 - [x] Keep `niniBUS::publish()` and `niniBUS::receive()` as lookup/delegation
       code.
 
@@ -72,20 +72,20 @@ Objective: make the prototype easier to maintain and safer to extend.
 
 TODO:
 
-- [ ] Remove stale comments.
-- [ ] Remove unused headers.
-- [ ] Make API naming and parameter names consistent.
-- [ ] Decide whether `subscribe()` should return `bool` or a result enum.
-- [ ] Decide whether unused enum values should be implemented or removed.
+- [x] Remove stale comments.
+- [x] Remove unused headers.
+- [x] Make API naming and parameter names consistent.
+- [x] Decide whether `subscribe()` should return `bool` or a result enum.
+- [x] Decide whether unused enum values should be implemented or removed.
 - [x] Make lane size, capacity, and credit helpers private.
-- [ ] Add unit tests for publish/receive FIFO behavior.
-- [ ] Add unit tests for multiple independent lanes.
-- [ ] Add unit tests for receiving from an empty lane.
-- [ ] Add unit tests for receiving from a missing lane.
-- [ ] Add unit tests for publish-before-subscribe.
-- [ ] Add a test Makefile target or document the test command.
-- [ ] Make the example handle return values explicitly.
-- [ ] Keep `README.md` and `DESIGN.md` updated with every API change.
+- [x] Add unit tests for publish/receive FIFO behavior.
+- [x] Add unit tests for multiple independent lanes.
+- [x] Add unit tests for receiving from an empty lane.
+- [x] Add unit tests for receiving from a missing lane.
+- [x] Add unit tests for publish-before-subscribe.
+- [x] Add a test Makefile target or document the test command.
+- [x] Make the example handle return values explicitly.
+- [x] Keep `README.md` and `DESIGN.md` updated with every API change.
 
 Definition of done:
 
@@ -105,7 +105,7 @@ Current status: started.
 Implemented so far:
 
 - Lanes are bounded by `DEFAULT_LANE_CAPACITY`.
-- `Lane::push()` returns `PublishStatus::LaneFull` when the lane has no
+- `lane_t::push()` returns `PublishStatus::LaneFull` when the lane has no
   remaining credit.
 - `PublishResult::Credit` gives publisher feedback after each publish attempt.
 - Example tests cover lane capacity, lane credit, and full-lane behavior.
@@ -116,9 +116,9 @@ TODO:
 - [x] Split lane implementation into separate `Lane.h` and `Lane.cpp` files.
 - [x] Keep `niniBUS::publish()` and `niniBUS::receive()` as boring
       lookup/delegation functions.
-- [x] Move publish/receive queue behavior into `Lane::push()` and
-      `Lane::pop()`.
-- [x] Document that queue behavior changes should stay isolated in `Lane`.
+- [x] Move publish/receive queue behavior into `lane_t::push()` and
+      `lane_t::pop()`.
+- [x] Document that queue behavior changes should stay isolated in `lane_t`.
 - [x] Decide whether lanes should have bounded queues.
 - [x] Add default bounded lane capacity.
 - [x] Implement `PublishStatus::LaneFull`.
@@ -126,8 +126,7 @@ TODO:
 - [x] Add publisher feedback for accepted and rejected messages.
 - [ ] Decide whether `PublishStatus::LaneNotFound` is needed.
 - [x] Make lane size, capacity, and credit helpers private.
-- [ ] Decide whether public queue size/statistics accessors are needed.
-- [ ] Add lane existence/query helpers if useful.
+- [x] Decide whether public queue size/statistics accessors are needed.
 - [x] Add tests for queue capacity.
 - [x] Add tests for publish result statuses.
 - [x] Document basic back-pressure behavior.
@@ -158,8 +157,8 @@ systems.
 
 TODO:
 
-- [ ] Measure memory used by one `Lane`.
-- [ ] Measure overhead of `std::unordered_map<uint32_t, Lane>`.
+- [ ] Measure memory used by one `lane_t`.
+- [ ] Measure overhead of `std::unordered_map<laneID_t, lane_t>`.
 - [ ] Compare `unordered_map` with a fixed-size lane table.
 - [ ] Decide whether dynamic allocation from STL containers is acceptable.
 - [ ] Investigate fixed maximum lane count.

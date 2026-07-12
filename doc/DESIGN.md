@@ -10,11 +10,11 @@ message queue, and `receive()` removes one message from that queue.
 ## Source Files
 
 - `status.h` declares publish/receive statuses and `PublishResult`.
-- `Lane.h` declares the `Lane` class.
+- `Lane.h` declares the `lane_t` class.
 - `Lane.cpp` implements lane-local queue behavior.
 - `niniBUS.h` declares the public bus API.
 - `niniBUS.cpp` implements lane lookup, lazy lane creation, and delegation to
-  `Lane`.
+  `lane_t`.
 - `Makefile` builds `niniBUS.cpp` and `Lane.cpp` into the static library
   `libniniBUS.a`.
 - `example/hello.cpp` demonstrates single-threaded usage and assert-based
@@ -25,7 +25,7 @@ message queue, and `receive()` removes one message from that queue.
 ## Public API
 
 ```cpp
-using lane_t = uint32_t;
+using laneID_t = uint32_t;
 
 enum class PublishStatus {
     Ok,
@@ -45,29 +45,30 @@ struct PublishResult {
     PublishStatus Status;
 };
 
-PublishResult publish(lane_t laneID, std::string message);
-ReceiveStatus receive(lane_t laneID, std::string& message);
-bool subscribe(lane_t laneID);
+PublishResult publish(laneID_t laneID, const std::string& message);
+ReceiveStatus receive(laneID_t laneID, std::string& message);
+bool subscribe(laneID_t laneID);
 ```
 
-`lane_t` identifies a logical message lane.
+`laneID_t` identifies a logical message lane. `lane_t` is the lane object stored
+inside the bus map.
 
 ## Core Data Model
 
-### `Lane`
+### `lane_t`
 
-`Lane` stores queued messages for one lane and owns lane-local queue behavior.
+`lane_t` stores queued messages for one lane and owns lane-local queue behavior.
 
 Private fields:
 
 - `capacity`: the maximum number of queued messages for the lane.
 - `content`: a `std::deque<std::string>` containing pending messages.
 
-`Lane` does not store its own lane ID. The lane ID is already the key in
-`niniBUS::lane_map_`, so storing the same value inside every `Lane` would
+`lane_t` does not store its own lane ID. The lane ID is already the key in
+`niniBUS::lane_map_`, so storing the same value inside every lane object would
 duplicate state.
 
-`Lane` can be constructed with a capacity and copied. It does not own external
+`lane_t` can be constructed with a capacity and copied. It does not own external
 resources.
 
 Public functions today:
@@ -82,10 +83,10 @@ Private helper functions:
 - `getCredit()`: return remaining queue capacity.
 
 The queue data and capacity helpers are private. `niniBUS` does not inspect
-lane size or capacity directly; it delegates to `Lane::push()` and
-`Lane::pop()`.
+lane size or capacity directly; it delegates to `lane_t::push()` and
+`lane_t::pop()`.
 
-`Lane::getCredit()` returns remaining queue capacity:
+`lane_t::getCredit()` returns remaining queue capacity:
 
 ```cpp
 capacity - content.size()
@@ -96,16 +97,16 @@ capacity - content.size()
 `niniBUS` stores lanes by value:
 
 ```cpp
-std::unordered_map<uint32_t, Lane> lane_map_;
+std::unordered_map<laneID_t, lane_t> lane_map_;
 ```
 
-The map key is the lane ID. The map value is the `Lane` object for that lane.
+The map key is the lane ID. The map value is the lane object for that lane.
 Because lanes are stored by value, the current implementation does not allocate
 lanes with `new` and does not need to manually delete lane objects.
 
 `niniBUS` is intentionally thin. It should not know the details of how lane
 queues push, pop, enforce capacity, or compute status. Its job is to locate or
-create the correct lane and delegate queue behavior to `Lane`.
+create the correct lane and delegate queue behavior to `lane_t`.
 
 ## Lane Creation
 
@@ -119,16 +120,16 @@ A lane can be created by:
 
 Creation flow:
 
-1. Search `lane_map_` for `laneID`.
-2. If missing, construct a `Lane`.
-3. Store the lane in `lane_map_`.
-4. Use the stored lane for later operations.
+1. Call `try_emplace(laneID, lane_t())`.
+2. If the lane is missing, construct and insert the lane.
+3. Use the returned iterator to access the stored lane.
 
 Current implementation:
 
-- `publish()` creates a missing lane with the default `Lane` constructor, so it
-  uses `DEFAULT_LANE_CAPACITY`.
-- `subscribe()` also creates missing lanes with the default `Lane` constructor.
+- `publish()` creates a missing lane with the default `lane_t` constructor, so
+  it uses `DEFAULT_LANE_CAPACITY`.
+- `subscribe()` also creates missing lanes with the default `lane_t`
+  constructor.
 - `receive()` creates a missing lane by calling `subscribe()` and returns
   `ReceiveStatus::LazyLaneCreated`.
 
@@ -138,15 +139,14 @@ Current implementation:
 
 Algorithm:
 
-1. Look up `laneID` in `lane_map_`.
-2. If the lane exists, call `Lane::push(message)` and return its result.
-3. If the lane does not exist, construct a new `Lane`, insert it into the map,
-   call `Lane::push(message)`, and return success.
+1. Use `try_emplace()` to find or create the lane.
+2. Call `lane_t::push(message)` on the stored lane.
+3. Return the result from `lane_t::push()`.
 
 Messages are pushed to the back of the deque, so delivery order is FIFO.
 Credit is reported after the publish attempt.
 
-`Lane::push()` owns capacity checks, queue mutation, credit calculation, and
+`lane_t::push()` owns capacity checks, queue mutation, credit calculation, and
 publish status. This keeps `niniBUS::publish()` boring: it only finds or creates
 the lane and delegates the lane-local behavior.
 
@@ -171,8 +171,8 @@ Defined but currently unused publish status:
 
 Algorithm:
 
-1. Look up `laneID`.
-2. If missing, construct and insert a new `Lane`.
+1. Use `try_emplace()` with `laneID`.
+2. If missing, construct and insert a new `lane_t`.
 3. Return `true`.
 
 The current code does not track subscribers beyond creating the lane.
@@ -189,10 +189,10 @@ Algorithm:
    - Print an error message.
    - Call `subscribe(laneID)` so the lane exists for future messages.
    - Return `ReceiveStatus::LazyLaneCreated`.
-4. Call `Lane::pop(message)`.
-5. Return the `ReceiveStatus` produced by `Lane::pop()`.
+4. Call `lane_t::pop(message)`.
+5. Return the `ReceiveStatus` produced by `lane_t::pop()`.
 
-`Lane::pop()` owns the empty-queue check and output-message mutation. This keeps
+`lane_t::pop()` owns the empty-queue check and output-message mutation. This keeps
 receive behavior localized to the lane.
 
 `receive()` is destructive. Once a message is received, it is no longer
@@ -240,8 +240,16 @@ files from the example folder.
 Lanes are stored by value in `lane_map_`, so normal container destruction
 releases all lane objects when the bus is destroyed.
 
-The `niniBUS` destructor is currently quiet. Older shutdown messages are left as
-comments in the source, but the library does not print during destruction.
+`niniBUS` and `lane_t` do not declare custom destructors right now. They do not
+own raw pointers, file handles, threads, sockets, or other resources that need
+manual cleanup. The compiler-generated destructors are enough: `std::unordered_map`
+destroys the stored lanes, and each lane's `std::deque<std::string>` destroys
+its queued messages.
+
+Older shutdown/debug destructor messages were removed because library object
+destruction should not print to stdout/stderr as a side effect. If future code
+adds a real owned resource, then a custom destructor or RAII wrapper can be
+introduced at that time.
 
 ## Thread Safety
 
@@ -271,6 +279,8 @@ Current behavior:
 - `receive()` returns `ReceiveStatus::Ok` when a message was received.
 - `receive()` returns `ReceiveStatus::LazyLaneCreated` when a missing lane was
   created for future messages.
+- `receive()` can return `ReceiveStatus::LaneNotFound` if future subscription
+  creation fails.
 - `receive()` returns `ReceiveStatus::LaneEmpty` when the lane exists but has no
   queued messages.
 

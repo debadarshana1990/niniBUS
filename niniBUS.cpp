@@ -2,36 +2,25 @@
 
 // Define static member
 
-PublishResult niniBUS::publish(lane_t laneID, const std::string& message)
+PublishResult niniBUS::publish(laneID_t laneID, const std::string& message)
 {
-    ///check if present in the map
-    auto it = lane_map_.find(laneID);
-    if(it != lane_map_.end())
-    {
-        auto& laneobj = it->second;
-        return laneobj.push(message);
-    }
-    //if its not present need to create the object and push the message
-    Lane newLane;
-    lane_map_[laneID] = newLane;
-    return lane_map_[laneID].push(message);
+    // Check if lane exists, if not create it
+    auto [it, inserted] = lane_map_.try_emplace(laneID, lane_t());
+
+    return it->second.push(message);
 }
 /* subscribe*/
-bool niniBUS::subscribe(lane_t laneID)
+bool niniBUS::subscribe(laneID_t laneID)
 {
-    // Check if the lane ID exists
-    auto it = lane_map_.find(laneID);
-    if (it == lane_map_.end())
-    {
-        Lane newLane;
-        lane_map_[laneID] = newLane;
-    }
-
+    // Check if the lane ID exists, if not create it
+    lane_map_.try_emplace(laneID, lane_t());
+    
+    // Return true as long as the subscription is successful (whether new or existing)
     return true;
 }
 
 /* pull message is interesting */
-ReceiveStatus niniBUS::receive(lane_t laneID, std::string& message)
+ReceiveStatus niniBUS::receive(laneID_t laneID, std::string& message)
 {
     message.clear();
     //check if the laneID is present
@@ -39,11 +28,14 @@ ReceiveStatus niniBUS::receive(lane_t laneID, std::string& message)
     if (it == lane_map_.end())
     {
         std::cerr << "Lane ID not found. Subscribing for future messages." << std::endl;
-        subscribe(laneID);
-        return ReceiveStatus::LazyLaneCreated;
+        if(subscribe(laneID))
+        {
+            return ReceiveStatus::LazyLaneCreated;
+        }
+        return ReceiveStatus::LaneNotFound;
     }
 
     // Get reference to the lane in the map and check if it has content
-    Lane& laneObj = it->second;
+    lane_t& laneObj = it->second;
     return laneObj.pop(message);
 }

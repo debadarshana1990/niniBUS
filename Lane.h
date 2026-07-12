@@ -6,7 +6,7 @@
 
 #define DEFAULT_LANE_CAPACITY (uint32_t)10
 
-class Lane
+class lane_t
 {
 
     // Message structure definition
@@ -26,12 +26,10 @@ class Lane
     }
     
 public:
-   // Lane() : capacity(0) {}
-    Lane( uint32_t cap = DEFAULT_LANE_CAPACITY) : capacity(cap) {};
-    Lane(const Lane& other) = default;
-    
-    
-    ~Lane(){}
+   // lane_t() : capacity(0) {}
+    lane_t( uint32_t cap = DEFAULT_LANE_CAPACITY) : capacity(cap) {};
+    lane_t(const lane_t& other) = default;
+
     PublishResult push(const std::string& message);
     ReceiveStatus pop(std::string& message);
     

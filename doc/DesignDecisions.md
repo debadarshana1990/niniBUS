@@ -69,7 +69,7 @@ process lifetime, and connection management.
 
 **Status**: accepted
 
-**Decision**: messages travel through numeric lanes identified by `lane_t`.
+**Decision**: messages travel through numeric lanes identified by `laneID_t`.
 
 **Rationale**:
 
@@ -127,9 +127,9 @@ communication path. Applications assign meaning to lane IDs.
 status reporting:
 
 ```cpp
-PublishResult publish(lane_t laneID, std::string message);
-ReceiveStatus receive(lane_t laneID, std::string& message);
-bool subscribe(lane_t laneID);
+PublishResult publish(laneID_t laneID, const std::string& message);
+ReceiveStatus receive(laneID_t laneID, std::string& message);
+bool subscribe(laneID_t laneID);
 ```
 
 **Rationale**:
@@ -164,7 +164,7 @@ bool subscribe(lane_t laneID);
 **Decision**: store lanes directly in the bus map:
 
 ```cpp
-std::unordered_map<uint32_t, Lane> lane_map_;
+std::unordered_map<laneID_t, lane_t> lane_map_;
 ```
 
 This replaces the earlier two-structure design:
@@ -196,8 +196,9 @@ std::unordered_map<uint32_t, uint32_t> lane_map_; // laneID -> vector index
 - The current implementation has no per-lane ownership leak.
 - There is only one authoritative lane registry: `lane_map_`.
 - Map lookup returns the lane object directly.
-- The lane ID lives only as the map key, not as duplicated state inside `Lane`.
-- `Lane` must remain cheaply movable/copyable enough for map storage.
+- The lane ID lives only as the map key, not as duplicated state inside
+  `lane_t`.
+- `lane_t` must remain cheaply movable/copyable enough for map storage.
 - `unordered_map` still performs dynamic allocation internally.
 
 **Alternative replaced**: `std::vector<Lane*>` plus a `laneID -> vector index`
@@ -214,34 +215,34 @@ map.
 
 - Memory profiling shows `unordered_map` overhead is too high.
 - The project moves toward fixed-size embedded storage.
-- `Lane` gains non-copyable resources.
+- `lane_t` gains non-copyable resources.
 
 ## DD-007 - Do Not Store Lane ID Inside Lane
 
 **Status**: accepted
 
-**Decision**: `Lane` does not store `laneID`; the lane ID is represented by the
+**Decision**: `lane_t` does not store `laneID`; the lane ID is represented by the
 key in `niniBUS::lane_map_`.
 
 ```cpp
-std::unordered_map<uint32_t, Lane> lane_map_;
+std::unordered_map<laneID_t, lane_t> lane_map_;
 ```
 
 **Rationale**:
 
 - The map key already identifies the lane.
-- Storing the same ID inside `Lane` duplicates state.
-- Removing `Lane::laneID` saves memory per lane.
+- Storing the same ID inside `lane_t` duplicates state.
+- Removing `lane_t::laneID` saves memory per lane.
 - Removing duplicated identity avoids consistency questions between the map key
   and the value object.
 
 **Consequences**:
 
-- `Lane` is now only responsible for queue state and capacity.
+- `lane_t` is now only responsible for queue state and capacity.
 - Code that needs the lane ID should use the map key or the API parameter.
 - Debugging/logging for lane IDs should happen at the `niniBUS` layer, where the
   lane ID is available.
-- Constructors and call sites must not treat the `Lane` constructor argument as
+- Constructors and call sites must not treat the `lane_t` constructor argument as
   a lane ID. The constructor argument now represents capacity.
 
 **Revisit when**:
@@ -255,7 +256,7 @@ std::unordered_map<uint32_t, Lane> lane_map_;
 
 **Status**: accepted
 
-**Decision**: `Lane` keeps `capacity`, `content`, and capacity helper functions
+**Decision**: `lane_t` keeps `capacity`, `content`, and capacity helper functions
 private. It exposes push/pop behavior instead of allowing direct mutation or
 bus-side queue inspection.
 
@@ -326,7 +327,7 @@ uint32_t getCredit() const;
 **Status**: accepted
 
 **Decision**: keep `niniBUS::publish()` and `niniBUS::receive()` boring:
-find or create the lane, then delegate to `Lane::push()` or `Lane::pop()`.
+find or create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
 
 **Rationale**:
 
@@ -339,15 +340,15 @@ find or create the lane, then delegate to `Lane::push()` or `Lane::pop()`.
 
 **Consequences**:
 
-- `publish()` delegates successful publish behavior to `Lane::push()`.
-- `receive()` delegates pop and empty-queue behavior to `Lane::pop()`.
+- `publish()` delegates successful publish behavior to `lane_t::push()`.
+- `receive()` delegates pop and empty-queue behavior to `lane_t::pop()`.
 - `niniBUS` stays easier to read and reason about.
 
 **Current implementation note**:
 
-- `receive()` already delegates queue behavior to `Lane::pop()`.
+- `receive()` already delegates queue behavior to `lane_t::pop()`.
 - `publish()` delegates capacity checks, queue mutation, credit calculation, and
-  publish status to `Lane::push()`.
+  publish status to `lane_t::push()`.
 
 **Revisit when**:
 
@@ -369,8 +370,8 @@ to, or received from.
 
 **Consequences**:
 
-- Missing-lane receive returns `ReceiveStatus::LazyLaneCreated`.
-- `ReceiveStatus::LaneNotFound` is currently defined but not produced.
+- Missing-lane receive normally returns `ReceiveStatus::LazyLaneCreated`.
+- `ReceiveStatus::LaneNotFound` is reserved for a failed lane creation path.
 - Applications that want strict lane registration need extra policy later.
 
 **Revisit when**:
@@ -589,8 +590,6 @@ especially when API return types or ownership models change.
 
 - Should `subscribe()` keep returning `bool`, or should it return a dedicated
   result enum?
-- Should the commented destructor messages be removed entirely, or kept as
-  source-only notes?
 - Should unused enum values be removed until they are implemented?
 - Should missing-lane receive create a lane, or should it return a strict
   not-found result?
@@ -614,13 +613,13 @@ Does this make the bus better, or only more complicated?
 
 **Status**: accepted
 
-**Decision**: starting in V1, `Lane` is the owner of lane-local queue behavior.
+**Decision**: starting in V1, `lane_t` is the owner of lane-local queue behavior.
 `niniBUS::publish()` and `niniBUS::receive()` should stay boring: find or
-create the lane, then delegate to `Lane::push()` or `Lane::pop()`.
+create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
 
 `niniBUS` should not know how a lane stores messages, checks capacity, computes
 credit, detects an empty queue, pushes a message, or pops a message. Those
-details belong inside the `Lane` implementation.
+details belong inside the `lane_t` implementation.
 
 **Rationale**:
 
@@ -636,21 +635,21 @@ details belong inside the `Lane` implementation.
 
 **Consequences**:
 
-- `Lane::push()` owns publish-side lane behavior: capacity checks, queue
+- `lane_t::push()` owns publish-side lane behavior: capacity checks, queue
   mutation, credit calculation, and publish status.
-- `Lane::pop()` owns receive-side lane behavior: empty-queue checks, output
+- `lane_t::pop()` owns receive-side lane behavior: empty-queue checks, output
   message mutation, FIFO removal, and receive status.
 - `niniBUS.cpp` should be intentionally plain and easy to read.
-- `Lane` helper methods such as size, capacity, and credit should be private
+- `lane_t` helper methods such as size, capacity, and credit should be private
   unless there is a clear public API reason to expose them.
 - If FIFO storage changes from `std::deque` to another structure, the change
-  should be isolated to `Lane`.
+  should be isolated to `lane_t`.
 
 **V1 rule**:
 
 Do not add queue-specific logic back into `niniBUS::publish()` or
 `niniBUS::receive()`. If a change is about how messages are accepted, rejected,
-stored, credited, or removed from a lane, make that change in `Lane`.
+stored, credited, or removed from a lane, make that change in `lane_t`.
 
 **Revisit when**:
 
@@ -658,3 +657,81 @@ stored, credited, or removed from a lane, make that change in `Lane`.
 - Public lane statistics become part of the official API.
 - A future transport layer needs a different separation between routing and
   storage.
+
+## DD-019 - Use `try_emplace()` For Lazy Lane Creation
+
+**Status**: accepted
+
+**Decision**: when `niniBUS` needs to publish to a lane that may or may not
+already exist, use `std::unordered_map::try_emplace()` to find or create the
+lane and then delegate to the stored lane object.
+
+Current publish-side pattern:
+
+```cpp
+auto [it, inserted] = lane_map_.try_emplace(laneID, lane_t());
+return it->second.push(message);
+```
+
+**Rationale**:
+
+- Lazy lane creation is part of the current bus behavior.
+- The bus needs an iterator to the stored lane so it can call `lane_t::push()`.
+- `try_emplace()` combines lookup and conditional insertion into one map
+  operation.
+- The older `find()` plus `operator[]` approach can search the map once to check
+  for the lane, then search again to insert or access the missing lane.
+- `operator[]` also default-inserts a value before assignment, which can create
+  extra construction and assignment work.
+- `try_emplace()` creates the mapped lane only when the key is missing and
+  returns the iterator needed for the next step.
+
+**Consequences**:
+
+- `publish()` stays short: find or create the lane, then call `push()`.
+- Missing-lane creation avoids repeated map lookups.
+- The code avoids accidental `operator[]` default insertion in publish paths.
+- The `inserted` flag is available if future behavior needs to distinguish a
+  newly created lane from an existing one.
+
+**Revisit when**:
+
+- Lazy lane creation is removed.
+- Lane construction needs non-default capacity or policy arguments.
+- The map storage strategy changes away from `std::unordered_map`.
+
+## DD-020 - No Custom Destructors For Now
+
+**Status**: accepted
+
+**Decision**: do not declare custom destructors for `niniBUS` or `lane_t` while
+they only own standard-library value members.
+
+**Rationale**:
+
+- `niniBUS` stores lanes by value in `std::unordered_map`.
+- `lane_t` stores messages in `std::deque<std::string>`.
+- These containers already clean up their own memory when their owning object is
+  destroyed.
+- There are no raw owning pointers, file handles, threads, sockets, or other
+  manual resources that need custom cleanup.
+- A destructor that only prints messages or has an empty body does not add
+  behavior the library needs today.
+- Removing explicit destructors follows the C++ rule of zero: let the compiler
+  generate special member functions until the class truly owns a resource that
+  needs custom management.
+
+**Consequences**:
+
+- Destroying a `niniBUS` object is quiet.
+- Queue contents are released automatically through normal container
+  destruction.
+- The code has less lifecycle boilerplate.
+- If future code adds a real owned resource, the project can introduce a custom
+  destructor or a dedicated RAII wrapper then.
+
+**Revisit when**:
+
+- `niniBUS` owns resources outside normal value members.
+- Lane storage changes to raw pointers or manually managed memory.
+- A future transport layer opens files, sockets, threads, or OS handles.

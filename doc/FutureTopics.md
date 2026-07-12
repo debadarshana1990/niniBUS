@@ -133,8 +133,8 @@ Idea: measure before changing data structures.
 
 Measurements:
 
-- Size of `Lane`.
-- Size and overhead of `std::unordered_map<uint32_t, Lane>`.
+- Size of `lane_t`.
+- Size and overhead of `std::unordered_map<laneID_t, lane_t>`.
 - Per-message allocation behavior.
 - Per-lane allocation behavior.
 - Allocation count during publish/receive.
@@ -154,7 +154,7 @@ Promotion trigger:
 
 Ideas to compare:
 
-- `std::unordered_map<uint32_t, Lane>`.
+- `std::unordered_map<laneID_t, lane_t>`.
 - Sorted vector of lanes.
 - Fixed-size lane table.
 - Open-addressed static hash table.
