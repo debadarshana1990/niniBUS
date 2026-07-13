@@ -52,7 +52,7 @@ Out of scope:
 - Multi-threading.
 - IPC.
 - Back pressure.
-- Custom FIFO implementation.
+- Runtime-configurable FIFO capacity.
 - Lock-free structures.
 - Performance optimization.
 
@@ -108,6 +108,8 @@ Implemented so far:
 - `lane_t::push()` returns `PublishStatus::LaneFull` when the lane has no
   remaining credit.
 - `PublishResult::Credit` gives publisher feedback after each publish attempt.
+- `lane_t` stores messages in `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
+- `niniFIFO_t` is a fixed-size circular FIFO backed by `std::array`.
 - Example tests cover lane capacity, lane credit, and full-lane behavior.
 
 TODO:
@@ -121,6 +123,9 @@ TODO:
 - [x] Document that queue behavior changes should stay isolated in `lane_t`.
 - [x] Decide whether lanes should have bounded queues.
 - [x] Add default bounded lane capacity.
+- [x] Add project-owned fixed-size FIFO storage.
+- [x] Move `niniFIFO_t` template method definitions into `niniFIFO.h`.
+- [x] Add `niniFIFO.cpp` to the root static-library build.
 - [x] Implement `PublishStatus::LaneFull`.
 - [x] Add lane credit through `PublishResult::Credit`.
 - [x] Add publisher feedback for accepted and rejected messages.
@@ -158,6 +163,7 @@ systems.
 TODO:
 
 - [ ] Measure memory used by one `lane_t`.
+- [ ] Measure memory used by one `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
 - [ ] Measure overhead of `std::unordered_map<laneID_t, lane_t>`.
 - [ ] Compare `unordered_map` with a fixed-size lane table.
 - [ ] Decide whether dynamic allocation from STL containers is acceptable.

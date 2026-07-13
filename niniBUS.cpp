@@ -5,7 +5,7 @@
 PublishResult niniBUS::publish(laneID_t laneID, const std::string& message)
 {
     // Check if lane exists, if not create it
-    auto [it, inserted] = lane_map_.try_emplace(laneID);
+    auto [it, _] = lane_map_.try_emplace(laneID);
 
     return it->second.push(message);
 }

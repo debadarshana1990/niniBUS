@@ -1,7 +1,7 @@
 #pragma once
 #include <iostream>
 #include <string>
-#include <deque>
+#include "niniFIFO.h"
 #include "status.h"
 
 #define DEFAULT_LANE_CAPACITY (uint32_t)10
@@ -10,24 +10,22 @@ class lane_t
 {
 
     // Message structure definition
-    uint32_t capacity;
-    std::deque<std::string> content;
+    niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY> content;
     uint32_t qsize() const
     {
         return content.size();
     }
     uint32_t getCapacity() const
     {
-        return capacity;
+        return DEFAULT_LANE_CAPACITY;
     }
     uint32_t getCredit() const 
     { 
-        return capacity - content.size(); 
+        return DEFAULT_LANE_CAPACITY - content.size();
     }
     
 public:
-   // lane_t() : capacity(0) {}
-    lane_t( uint32_t cap = DEFAULT_LANE_CAPACITY) : capacity(cap) {};
+    lane_t() = default;
     lane_t(const lane_t& other) = default;
 
     PublishResult push(const std::string& message);

@@ -13,7 +13,7 @@ PublishResult lane_t::push(const std::string& message)
 ReceiveStatus lane_t::pop(std::string& message)
 {
     message.clear(); //clear the message string if any stray data
-    if (!content.empty())
+    if (!content.isEmpty())
     {
         std::string msg = content.front();
         content.pop_front();

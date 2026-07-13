@@ -31,15 +31,19 @@ Before moving a topic from this document into a milestone:
 These ideas improve the current single-threaded design without adding
 multi-threading or IPC.
 
-### Custom FIFO
+### FIFO Evolution
 
-Idea: replace or wrap `std::deque<std::string>` with a project-owned FIFO
-abstraction.
+Current state: V1 now uses a project-owned fixed-size FIFO:
+
+```cpp
+niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>
+```
+
+This section now tracks possible future FIFO improvements rather than the
+initial replacement of `std::deque`.
 
 Topics:
 
-- Circular buffer.
-- Fixed capacity.
 - Optional dynamic capacity.
 - Queue statistics.
 - Configurable queue size.
@@ -47,15 +51,16 @@ Topics:
 
 Questions:
 
-- Is `std::deque` insufficient for current goals?
 - Should capacity be per lane or global?
 - Should queue capacity be compile-time or runtime configuration?
-- Does a custom FIFO improve clarity, or only add maintenance cost?
+- Should the current template-capacity FIFO stay, or should runtime capacity be
+  introduced?
+- Should FIFO errors use return statuses, exceptions, or both?
 
 Promotion trigger:
 
-- Move to V1 only after the current `std::deque` behavior is tested and a real
-  capacity/statistics need is identified.
+- Move to a future milestone when runtime capacity, richer statistics, or a
+  different overflow policy becomes a real requirement.
 
 ### Back Pressure
 
@@ -134,8 +139,9 @@ Idea: measure before changing data structures.
 Measurements:
 
 - Size of `lane_t`.
+- Size of `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
 - Size and overhead of `std::unordered_map<laneID_t, lane_t>`.
-- Per-message allocation behavior.
+- Per-message allocation behavior from `std::string`.
 - Per-lane allocation behavior.
 - Allocation count during publish/receive.
 

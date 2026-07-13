@@ -98,6 +98,8 @@ communication path. Applications assign meaning to lane IDs.
 - FIFO ordering is easy to reason about.
 - Independent queues isolate traffic between lanes.
 - This keeps the V0 implementation small.
+- The current FIFO is `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`, a
+  fixed-size circular buffer backed by `std::array`.
 
 **Consequences**:
 
@@ -279,7 +281,7 @@ uint32_t getCredit() const;
 
 - The lane owns its queue invariants.
 - `niniBUS` should ask the lane to push and pop instead of reaching into the
-  deque directly.
+  FIFO directly.
 - Size, capacity, and credit calculations belong with the lane because they are
   derived from lane-local queue state.
 - This keeps future FIFO changes localized inside `lane_t`.
@@ -314,7 +316,7 @@ uint32_t getCredit() const;
 
 - `Lane.cpp` owns the implementation of `push()` and `pop()`.
 - `niniBUS.cpp` owns lane lookup, lazy lane creation, and delegation.
-- The root Makefile must compile both `niniBUS.cpp` and `Lane.cpp` into
+- The root Makefile compiles `niniBUS.cpp`, `Lane.cpp`, and `niniFIFO.cpp` into
   `libniniBUS.a`.
 
 **Revisit when**:
@@ -488,7 +490,8 @@ prefer clear implementation over premature compactness.
 
 **Consequences**:
 
-- `std::unordered_map` and `std::deque` are acceptable for now.
+- `std::unordered_map`, `std::array`, and the current `niniFIFO_t` are
+  acceptable for now.
 - Fixed-size tables, custom allocators, and pool allocators are postponed.
 - V2 owns embedded optimization work.
 
@@ -543,7 +546,8 @@ struct PublishResult {
 
 - Credit is returned after `publish()`.
 - Credit is derived from `capacity - content.size()`.
-- Lane capacity is currently fixed by `DEFAULT_LANE_CAPACITY`.
+- Lane capacity is currently fixed by `DEFAULT_LANE_CAPACITY` as the
+  `niniFIFO_t` template capacity.
 
 **Future possibilities**:
 
@@ -552,7 +556,8 @@ struct PublishResult {
 - Rate limiting.
 - Congestion control.
 - Returning updated credit from `receive()`.
-- Per-lane capacity configuration.
+- Per-lane capacity configuration, which would require a different FIFO
+  capacity strategy than the current template argument.
 
 **Revisit when**:
 
@@ -642,8 +647,8 @@ details belong inside the `lane_t` implementation.
 - `niniBUS.cpp` should be intentionally plain and easy to read.
 - `lane_t` helper methods such as size, capacity, and credit should be private
   unless there is a clear public API reason to expose them.
-- If FIFO storage changes from `std::deque` to another structure, the change
-  should be isolated to `lane_t`.
+- If FIFO storage changes from the current `niniFIFO_t` to another structure,
+  the change should be isolated to `lane_t`.
 
 **V1 rule**:
 
@@ -711,9 +716,9 @@ they only own standard-library value members.
 **Rationale**:
 
 - `niniBUS` stores lanes by value in `std::unordered_map`.
-- `lane_t` stores messages in `std::deque<std::string>`.
-- These containers already clean up their own memory when their owning object is
-  destroyed.
+- `lane_t` stores messages in `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
+- The FIFO stores messages in `std::array`, and these value members clean
+  themselves up when their owning object is destroyed.
 - There are no raw owning pointers, file handles, threads, sockets, or other
   manual resources that need custom cleanup.
 - A destructor that only prints messages or has an empty body does not add
@@ -736,3 +741,71 @@ they only own standard-library value members.
 - `niniBUS` owns resources outside normal value members.
 - Lane storage changes to raw pointers or manually managed memory.
 - A future transport layer opens files, sockets, threads, or OS handles.
+
+## DD-021 - Use A Fixed-Size FIFO For Lane Storage
+
+**Status**: current
+
+**Decision**: each `lane_t` stores messages in:
+
+```cpp
+niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY> content;
+```
+
+`niniFIFO_t` is a circular FIFO backed by `std::array<T, CAPACITY>`.
+
+**Rationale**:
+
+- Lane capacity is currently fixed by `DEFAULT_LANE_CAPACITY`.
+- A fixed-size FIFO makes the queue limit explicit in the lane type.
+- `std::array<T, CAPACITY>` requires `CAPACITY` to be a compile-time constant,
+  which matches the current fixed-capacity design.
+- The lane still exposes only `push()` and `pop()`; the bus does not depend on
+  FIFO internals.
+
+**Consequences**:
+
+- `lane_t` is default-constructible because its FIFO has a default constructor.
+- `try_emplace(laneID)` can default-construct a missing lane directly in
+  `lane_map_`.
+- Per-lane runtime capacity is not supported by the current FIFO type.
+- Changing lane capacity per lane later would require changing the FIFO storage
+  strategy or adding another lane construction path.
+
+**Revisit when**:
+
+- Per-lane runtime capacity is required.
+- Memory measurements show `std::array` per lane is too large.
+- Queue behavior needs dynamic capacity, allocation control, or richer
+  statistics.
+
+## DD-022 - Keep Template FIFO Implementation In The Header
+
+**Status**: accepted
+
+**Decision**: keep `niniFIFO_t` method definitions in `niniFIFO.h`.
+`niniFIFO.cpp` remains only a placeholder translation unit for the FIFO
+component.
+
+**Rationale**:
+
+- `niniFIFO_t` is a class template.
+- The compiler must see template method definitions at the point where a
+  concrete type such as `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>` is
+  instantiated.
+- Putting unqualified template method definitions in `niniFIFO.cpp` caused
+  errors such as "use of class template 'niniFIFO_t' requires template
+  arguments" and "unknown type name 'T'".
+
+**Consequences**:
+
+- The template implementation is header-owned.
+- The build can still compile `niniFIFO.cpp`, but it does not contain the
+  template method bodies.
+- Future non-template FIFO code can live in `niniFIFO.cpp` if needed.
+
+**Revisit when**:
+
+- Explicit template instantiation is introduced intentionally.
+- `niniFIFO_t` stops being a template.
+- FIFO implementation size becomes a compile-time problem.

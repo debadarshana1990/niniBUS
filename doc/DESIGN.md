@@ -12,11 +12,14 @@ message queue, and `receive()` removes one message from that queue.
 - `status.h` declares publish/receive statuses and `PublishResult`.
 - `Lane.h` declares the `lane_t` class.
 - `Lane.cpp` implements lane-local queue behavior.
+- `niniFIFO.h` declares and implements the fixed-size FIFO template.
+- `niniFIFO.cpp` exists as the FIFO component translation unit; template method
+  definitions stay in the header.
 - `niniBUS.h` declares the public bus API.
 - `niniBUS.cpp` implements lane lookup, lazy lane creation, and delegation to
   `lane_t`.
-- `Makefile` builds `niniBUS.cpp` and `Lane.cpp` into the static library
-  `libniniBUS.a`.
+- `Makefile` builds `niniBUS.cpp`, `Lane.cpp`, and `niniFIFO.cpp` into the
+  static library `libniniBUS.a`.
 - `example/hello.cpp` demonstrates single-threaded usage and assert-based
   behavior checks.
 - `example/Makefile` builds the example executable and links it against
@@ -61,15 +64,16 @@ inside the bus map.
 
 Private fields:
 
-- `capacity`: the maximum number of queued messages for the lane.
-- `content`: a `std::deque<std::string>` containing pending messages.
+- `content`: a `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>` containing
+  pending messages.
 
 `lane_t` does not store its own lane ID. The lane ID is already the key in
 `niniBUS::lane_map_`, so storing the same value inside every lane object would
 duplicate state.
 
-`lane_t` can be constructed with a capacity and copied. It does not own external
-resources.
+`lane_t` is default-constructible and copyable. It does not own external
+resources. Current lane capacity comes from the FIFO template argument
+`DEFAULT_LANE_CAPACITY`, not from a runtime lane constructor argument.
 
 Public functions today:
 
@@ -79,7 +83,7 @@ Public functions today:
 Private helper functions:
 
 - `qsize()`: return the current queued message count.
-- `getCapacity()`: return the lane capacity.
+- `getCapacity()`: return `DEFAULT_LANE_CAPACITY`.
 - `getCredit()`: return remaining queue capacity.
 
 The queue data and capacity helpers are private. `niniBUS` does not inspect
@@ -89,8 +93,35 @@ lane size or capacity directly; it delegates to `lane_t::push()` and
 `lane_t::getCredit()` returns remaining queue capacity:
 
 ```cpp
-capacity - content.size()
+DEFAULT_LANE_CAPACITY - content.size()
 ```
+
+### `niniFIFO_t`
+
+`niniFIFO_t<T, CAPACITY>` is a fixed-size circular FIFO template.
+
+It stores data in:
+
+```cpp
+std::array<T, CAPACITY> buffer;
+```
+
+Current FIFO state:
+
+- `head`: index of the oldest element.
+- `tail`: index where the next element will be written.
+- `currSize`: number of currently queued elements.
+
+Current FIFO operations:
+
+- `push_back(message)`: append unless the FIFO is full.
+- `front()`: return the oldest element.
+- `pop_front()`: remove the oldest element.
+- `isEmpty()`, `isFull()`, `size()`, and `getCapacity()`: inspect FIFO state.
+
+Because `niniFIFO_t` is a class template, its method definitions live in
+`niniFIFO.h`. The `.cpp` file only includes the header and documents that the
+template implementation is header-owned.
 
 ### `niniBUS`
 
@@ -130,10 +161,10 @@ pass an explicit temporary `lane_t()`.
 
 Current implementation:
 
-- `publish()` creates a missing lane with the default `lane_t` constructor, so
-  it uses `DEFAULT_LANE_CAPACITY`.
+- `publish()` creates a missing lane with the default `lane_t` constructor.
 - `subscribe()` also creates missing lanes with the default `lane_t`
   constructor.
+- The default lane owns a FIFO whose capacity is `DEFAULT_LANE_CAPACITY`.
 - `receive()` creates a missing lane by calling `subscribe()` and returns
   `ReceiveStatus::LazyLaneCreated`.
 
@@ -147,7 +178,7 @@ Algorithm:
 2. Call `lane_t::push(message)` on the stored lane.
 3. Return the result from `lane_t::push()`.
 
-Messages are pushed to the back of the deque, so delivery order is FIFO.
+Messages are pushed to the tail of the FIFO, so delivery order is FIFO.
 Credit is reported after the publish attempt.
 
 `lane_t::push()` owns capacity checks, queue mutation, credit calculation, and
@@ -158,7 +189,7 @@ Complexity:
 
 - Average `O(1)` lane lookup.
 - Average `O(1)` lane insertion.
-- `O(1)` deque append.
+- `O(1)` FIFO append.
 
 Current publish statuses:
 
@@ -227,7 +258,8 @@ The root Makefile builds only the library:
 make all
 ```
 
-That creates `libniniBUS.a` and removes generated `.o` and `.d` files.
+That compiles `niniBUS.cpp`, `Lane.cpp`, and `niniFIFO.cpp`, archives them into
+`libniniBUS.a`, and removes generated `.o` and `.d` files.
 
 The example owns its own build:
 
@@ -246,9 +278,9 @@ releases all lane objects when the bus is destroyed.
 
 `niniBUS` and `lane_t` do not declare custom destructors right now. They do not
 own raw pointers, file handles, threads, sockets, or other resources that need
-manual cleanup. The compiler-generated destructors are enough: `std::unordered_map`
-destroys the stored lanes, and each lane's `std::deque<std::string>` destroys
-its queued messages.
+manual cleanup. The compiler-generated destructors are enough:
+`std::unordered_map` destroys the stored lanes, and each lane's `niniFIFO_t`
+destroys its internal `std::array<std::string, DEFAULT_LANE_CAPACITY>`.
 
 Older shutdown/debug destructor messages were removed because library object
 destruction should not print to stdout/stderr as a side effect. If future code
@@ -262,7 +294,7 @@ The current implementation has no synchronization.
 Concurrent calls to `publish()`, `subscribe()`, or `receive()` can race on:
 
 - `lane_map_`
-- each lane's private `content` deque
+- each lane's private `content` FIFO
 
 Treat the bus as single-threaded unless a mutex or another synchronization
 strategy is added.
@@ -290,8 +322,8 @@ Current behavior:
 
 ## Recommended Next Improvements
 
-1. Decide whether lane capacity should stay fixed at `DEFAULT_LANE_CAPACITY` or
-   become configurable per lane.
+1. Decide whether lane capacity should stay fixed at compile time through
+   `DEFAULT_LANE_CAPACITY` or become configurable per lane.
 2. Decide whether public lane statistics are needed.
 3. Remove unused result values or implement the conditions that produce them.
 4. Add mutex protection if the bus will be used from multiple threads.

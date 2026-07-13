@@ -51,7 +51,7 @@ map to be able to default-construct a `lane_t`.
 That is why `lane_t` keeps a default constructor:
 
 ```cpp
-lane_t(uint32_t cap = DEFAULT_LANE_CAPACITY);
+lane_t() = default;
 ```
 
 Without a default constructor, `operator[]` cannot create a missing `lane_t`,
@@ -60,7 +60,8 @@ can look noisy because it is reporting where `unordered_map::operator[]` was
 instantiated, not only the exact user-level mistake.
 
 `lane_t` no longer stores `laneID`; the lane ID lives as the map key. The
-constructor argument is capacity, not lane identity.
+capacity now comes from `DEFAULT_LANE_CAPACITY` through the fixed-size FIFO
+member, not from a runtime lane constructor argument.
 
 ### Why `it->second` Is Different
 
@@ -324,8 +325,9 @@ At the moment, those destructors are not required.
 std::unordered_map<laneID_t, lane_t> lane_map_;
 ```
 
-Each `lane_t` stores messages in standard-library objects such as
-`std::deque<std::string>`.
+Each `lane_t` stores messages in value-type members such as
+`niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`, which contains an
+`std::array<std::string, DEFAULT_LANE_CAPACITY>`.
 
 These standard-library members clean themselves up automatically when their
 owning object is destroyed. That means the compiler-generated destructor already
@@ -334,7 +336,7 @@ does the correct thing:
 1. Destroy the `niniBUS` object.
 2. Destroy `lane_map_`.
 3. Destroy each stored `lane_t`.
-4. Destroy each lane's queue and strings.
+4. Destroy each lane's FIFO, array, and strings.
 
 There is no raw `new`/`delete`, file handle, socket, thread, mutex handle, or
 other manual resource that needs custom destructor code today.
@@ -356,3 +358,174 @@ Only write a destructor when the class has real cleanup work to do.
 For the current bus design, standard-library containers already own the cleanup,
 so the explicit destructors can stay removed until a future feature introduces a
 resource that needs manual lifetime management.
+
+## Compilation Stages For `try_emplace()` And `niniFIFO_t`
+
+### Stage 1 - `try_emplace(laneID)` Needed A Default-Constructible Lane
+
+The code changed lane creation to:
+
+```cpp
+auto [it, inserted] = lane_map_.try_emplace(laneID);
+```
+
+This asks `std::unordered_map` to create the mapped value with no constructor
+arguments when `laneID` is missing. Because the mapped value is `lane_t`, this
+requires:
+
+```cpp
+lane_t() = default;
+```
+
+The compiler error appeared deep inside libc++ `unordered_map` / `__hash_table`
+code, near a note like:
+
+```text
+note: in instantiation of function template specialization
+'std::unordered_map<unsigned int, lane_t>::try_emplace<>' requested here
+```
+
+The useful clue was the call site:
+
+```text
+niniBUS.cpp:8:37: note: ... try_emplace(laneID)
+```
+
+### Fix
+
+Make sure `lane_t` can be default-constructed. The current version does that:
+
+```cpp
+class lane_t
+{
+    niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY> content;
+
+public:
+    lane_t() = default;
+    lane_t(const lane_t& other) = default;
+};
+```
+
+This lets `try_emplace(laneID)` default-construct the lane directly inside the
+map.
+
+### Stage 2 - `std::array<T, capacity>` Cannot Use A Runtime Member
+
+During the FIFO work, the compiler reported:
+
+```text
+error: invalid use of non-static data member 'capacity'
+```
+
+The problematic idea was using a runtime data member as the size of
+`std::array`:
+
+```cpp
+std::array<T, capacity> buffer;
+```
+
+`std::array` needs its size as a compile-time constant. A normal member variable
+such as `capacity` is only known at runtime, so it cannot be used as the array
+size.
+
+### Fix
+
+Make FIFO capacity a non-type template parameter:
+
+```cpp
+template <typename T, uint32_t CAPACITY>
+class niniFIFO_t
+{
+    std::array<T, CAPACITY> buffer;
+};
+```
+
+Then `lane_t` chooses the capacity at compile time:
+
+```cpp
+niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY> content;
+```
+
+### Stage 3 - Template Methods Cannot Live In A Normal `.cpp` File
+
+The next compiler errors looked like:
+
+```text
+error: use of class template 'niniFIFO_t' requires template arguments
+error: unknown type name 'T'
+```
+
+This happened because template method definitions were written in
+`niniFIFO.cpp` as if `niniFIFO_t` and `T` were ordinary concrete names.
+
+For templates, the compiler must see the full method definitions when it
+instantiates a concrete type such as:
+
+```cpp
+niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>
+```
+
+### Fix
+
+Keep the `niniFIFO_t` method definitions in `niniFIFO.h`:
+
+```cpp
+template <typename T, uint32_t CAPACITY>
+class niniFIFO_t
+{
+public:
+    FIFOStatus push_back(const T& message)
+    {
+        // implementation in header
+    }
+};
+```
+
+`niniFIFO.cpp` now only includes the header and documents why the implementation
+is header-owned.
+
+### Stage 4 - State Naming Must Match The Constructor
+
+Another compile error was:
+
+```text
+error: member initializer 'count' does not name a non-static data member
+```
+
+That happened after the FIFO state member was renamed. The constructor still
+initialized `count`, but the class member was no longer named `count`.
+
+### Fix
+
+Use one state name consistently:
+
+```cpp
+uint32_t currSize;
+
+niniFIFO_t() : head(0), tail(0), currSize(0)
+{
+    buffer.fill(T());
+}
+```
+
+### Current Successful Build Stages
+
+The current root build now completes these stages:
+
+```text
+g++ ... -c niniBUS.cpp -o niniBUS.o
+g++ ... -c Lane.cpp -o Lane.o
+g++ ... -c niniFIFO.cpp -o niniFIFO.o
+ar rcs libniniBUS.a niniBUS.o Lane.o niniFIFO.o
+rm -f niniBUS.o Lane.o niniFIFO.o niniBUS.d Lane.d niniFIFO.d
+```
+
+### Key Lessons
+
+`try_emplace(laneID)` default-constructs the map value when the key is missing,
+so the mapped type must have a usable default constructor.
+
+`std::array<T, N>` needs `N` to be known at compile time.
+
+Template class method definitions usually belong in the header unless explicit
+template instantiation is being used deliberately.
