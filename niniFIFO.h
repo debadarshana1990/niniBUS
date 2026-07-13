@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <array>
 #include <stdexcept>
+#include <vector>
+
+#define DEFAULT_LANE_CAPACITY (uint32_t)10 //niniFIFO should holds the default value of the queue capacity not the lane
 
 enum class FIFOStatus
 {
@@ -10,55 +13,51 @@ enum class FIFOStatus
     EMPTY
 };
 
-template <typename T, uint32_t CAPACITY>
-class niniFIFO_t
+template <typename T>
+class niniFIFO
 {
     private:
-        std::array<T, CAPACITY> buffer; // Fixed-size array for FIFO
-        uint32_t head;
-        uint32_t tail;
-        uint32_t currSize;
+        std::vector<T> buffer_;
+        uint32_t capacity_;
+        uint32_t head_;
+        uint32_t tail_;
+        uint32_t currSize_;
     public:
-
-
-
-
-
     //public API
-    niniFIFO_t() : head(0), tail(0), currSize(0)
+    niniFIFO() : capacity_(DEFAULT_LANE_CAPACITY), head_(0), tail_(0), currSize_(0)
     {
-        buffer.fill(T());
+        buffer_.resize(capacity_);
     }
-    ~niniFIFO_t() = default;
 
     FIFOStatus push_back(const T& message)
     {
         if(isFull())
             return FIFOStatus::FULL;
-        buffer[tail] = message;
-        tail = (tail + 1) % CAPACITY;
-        currSize++;
+        buffer_[tail_] = message;
+        tail_ = (tail_ + 1) % capacity_;
+        currSize_++;
         return FIFOStatus::SUCCESS;
     }
 
-    void pop_front()
+    FIFOStatus pop_front()
     {
         if(isEmpty())
-            throw std::runtime_error("FIFO is empty");
-        head = (head + 1) % CAPACITY;
-        currSize--;
+            return FIFOStatus::EMPTY;
+        head_ = (head_ + 1) % capacity_;
+        currSize_--;
+        return FIFOStatus::SUCCESS;
     }
     
-    T& front() const
+    T& front()
     {
         if (isEmpty())
             throw std::runtime_error("FIFO is empty");
-        return const_cast<T&>(buffer[head]);
+        return buffer_[head_];
     }
     
     //helper functions
-    bool isEmpty() const {return (currSize == 0);}
-    bool isFull() const {return (currSize == CAPACITY);}
-    uint32_t size() const {return currSize;}
-    uint32_t getCapacity() const { return CAPACITY; }
+    bool isEmpty() const {return (currSize_ == 0);}
+    bool isFull() const {return (currSize_ == capacity_);}
+    uint32_t size() const {return currSize_;}
+    uint32_t getCapacity() const { return capacity_; }
 };

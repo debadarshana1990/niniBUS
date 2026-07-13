@@ -33,10 +33,10 @@ multi-threading or IPC.
 
 ### FIFO Evolution
 
-Current state: V1 now uses a project-owned fixed-size FIFO:
+Current state: V1 now uses a project-owned FIFO:
 
 ```cpp
-niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>
+niniFIFO<std::string>
 ```
 
 This section now tracks possible future FIFO improvements rather than the
@@ -52,9 +52,8 @@ Topics:
 Questions:
 
 - Should capacity be per lane or global?
-- Should queue capacity be compile-time or runtime configuration?
-- Should the current template-capacity FIFO stay, or should runtime capacity be
-  introduced?
+- Should queue capacity be exposed through public runtime configuration?
+- Should `capacity_` be configurable per FIFO instance?
 - Should FIFO errors use return statuses, exceptions, or both?
 
 Promotion trigger:
@@ -79,8 +78,7 @@ Possible API:
 ```cpp
 enum class PublishStatus {
     Ok,
-    LaneFull,
-    LaneNotFound
+    LaneFull
 };
 
 struct PublishResult {
@@ -139,7 +137,7 @@ Idea: measure before changing data structures.
 Measurements:
 
 - Size of `lane_t`.
-- Size of `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
+- Size of `niniFIFO<std::string>`.
 - Size and overhead of `std::unordered_map<laneID_t, lane_t>`.
 - Per-message allocation behavior from `std::string`.
 - Per-lane allocation behavior.

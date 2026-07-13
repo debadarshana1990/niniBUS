@@ -3,12 +3,10 @@
 
 enum class PublishStatus {
     Ok,
-    LaneNotFound,
     LaneFull
 };
 enum class ReceiveStatus {
     Ok,
-    LaneNotFound,
     LaneEmpty,
     LazyLaneCreated
 };

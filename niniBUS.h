@@ -15,6 +15,5 @@ private:
 public:
     PublishResult publish(laneID_t, const std::string& message);
     ReceiveStatus receive(laneID_t, std::string& message);
-    bool subscribe(laneID_t LaneID);
 
 };

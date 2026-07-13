@@ -98,8 +98,8 @@ communication path. Applications assign meaning to lane IDs.
 - FIFO ordering is easy to reason about.
 - Independent queues isolate traffic between lanes.
 - This keeps the V0 implementation small.
-- The current FIFO is `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`, a
-  fixed-size circular buffer backed by `std::array`.
+- The current FIFO is `niniFIFO<std::string>`, a circular buffer backed by
+  `std::vector`.
 
 **Consequences**:
 
@@ -121,17 +121,16 @@ communication path. Applications assign meaning to lane IDs.
 - Broadcast semantics become a requirement.
 - Per-subscriber queues or cursors are introduced.
 
-## DD-005 - Publish, Receive, Subscribe API
+## DD-005 - Publish And Receive API
 
 **Status**: current
 
-**Decision**: expose three core operations with explicit publish and receive
+**Decision**: expose two core operations with explicit publish and receive
 status reporting:
 
 ```cpp
 PublishResult publish(laneID_t laneID, const std::string& message);
 ReceiveStatus receive(laneID_t laneID, std::string& message);
-bool subscribe(laneID_t laneID);
 ```
 
 **Rationale**:
@@ -141,8 +140,10 @@ bool subscribe(laneID_t laneID);
 - `receive()` clearly communicates destructive FIFO consumption and returns a
   `ReceiveStatus` so callers can distinguish success, empty lane, and lazy lane
   creation.
-- `subscribe()` currently means "ensure this lane exists" and remains a simple
-  `bool` operation.
+- A separate `subscribe()` function is not required right now because
+  `receive()` already lazily creates missing lanes.
+- Removing `subscribe()` avoids an API that only duplicates lane creation
+  behavior without tracking real subscribers.
 
 **Consequences**:
 
@@ -150,14 +151,14 @@ bool subscribe(laneID_t laneID);
 - Publishers can react to `PublishStatus::LaneFull`.
 - Publishers can read `PublishResult::Credit` without separately querying lane
   internals.
-- `subscribe()` does not currently register callbacks or receiver identity.
-- The name `subscribe()` may sound stronger than its current behavior.
+- There is no subscription registry, callback registration, or subscriber
+  identity tracking in the current API.
 
 **Revisit when**:
 
 - Receiver tracking is added.
 - Callback subscriptions are introduced.
-- `subscribe()` needs a result enum for consistency.
+- Applications need explicit lane registration separate from publish/receive.
 
 ## DD-006 - Store Lanes By Value
 
@@ -200,7 +201,7 @@ std::unordered_map<uint32_t, uint32_t> lane_map_; // laneID -> vector index
 - Map lookup returns the lane object directly.
 - The lane ID lives only as the map key, not as duplicated state inside
   `lane_t`.
-- `lane_t` must remain cheaply movable/copyable enough for map storage.
+- `lane_t` should remain compatible with value storage in the map.
 - `unordered_map` still performs dynamic allocation internally.
 
 **Alternative replaced**: `std::vector<Lane*>` plus a `laneID -> vector index`
@@ -252,7 +253,7 @@ std::unordered_map<laneID_t, lane_t> lane_map_;
 - Lanes need self-describing metadata independent of the map.
 - Lane objects are moved outside `niniBUS::lane_map_`.
 - The bus adds named lanes or richer lane descriptors.
-- `subscribe()` and other lane creation paths are normalized around capacity.
+- lane creation paths need capacity configuration.
 
 ## DD-008 - Hide Lane Queue Internals
 
@@ -316,7 +317,7 @@ uint32_t getCredit() const;
 
 - `Lane.cpp` owns the implementation of `push()` and `pop()`.
 - `niniBUS.cpp` owns lane lookup, lazy lane creation, and delegation.
-- The root Makefile compiles `niniBUS.cpp`, `Lane.cpp`, and `niniFIFO.cpp` into
+- The root Makefile compiles `niniBUS.cpp` and `Lane.cpp` into
   `libniniBUS.a`.
 
 **Revisit when**:
@@ -361,20 +362,22 @@ find or create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
 
 **Status**: accepted
 
-**Decision**: create lanes lazily when they are first published to, subscribed
-to, or received from.
+**Decision**: create lanes lazily when they are first published to or received
+from.
 
 **Rationale**:
 
 - Callers do not need a separate setup phase.
 - Publishing to a new lane works immediately.
 - Receiving from a missing lane prepares the lane for future messages.
+- `receive()` uses `try_emplace(laneID)` so the returned `inserted` flag tells
+  whether the lane was just created.
 
 **Consequences**:
 
 - Missing-lane receive normally returns `ReceiveStatus::LazyLaneCreated`.
-- `ReceiveStatus::LaneNotFound` is reserved for a failed lane creation path.
 - Applications that want strict lane registration need extra policy later.
+- The old `find()` plus separate creation path is avoided.
 
 **Revisit when**:
 
@@ -391,7 +394,6 @@ while `receive()` returns an enum status.
 ```cpp
 enum class PublishStatus {
     Ok,
-    LaneNotFound,
     LaneFull
 };
 
@@ -402,7 +404,6 @@ struct PublishResult {
 
 enum class ReceiveStatus {
     Ok,
-    LaneNotFound,
     LaneEmpty,
     LazyLaneCreated
 };
@@ -419,13 +420,12 @@ enum class ReceiveStatus {
 **Consequences**:
 
 - Callers should check the result before using output data.
-- Some status values are currently placeholders.
-- Documentation must say which results are actually produced today.
+- Status values are limited to outcomes the implementation currently produces.
 
 **Revisit when**:
 
-- Placeholder enum values remain unused after V0.1.
-- `subscribe()` is converted from `bool` to a result enum.
+- Strict lane registration is added.
+- More receive failure modes are introduced.
 
 ## DD-013 - Single-Threaded For V0
 
@@ -441,7 +441,7 @@ enum class ReceiveStatus {
 
 **Consequences**:
 
-- Concurrent calls to `publish()`, `receive()`, or `subscribe()` are unsafe.
+- Concurrent calls to `publish()` or `receive()` are unsafe.
 - The documentation must describe the bus as single-threaded.
 - Multi-threading is deferred to V3.
 
@@ -490,7 +490,7 @@ prefer clear implementation over premature compactness.
 
 **Consequences**:
 
-- `std::unordered_map`, `std::array`, and the current `niniFIFO_t` are
+- `std::unordered_map`, `std::vector`, and the current `niniFIFO` are
   acceptable for now.
 - Fixed-size tables, custom allocators, and pool allocators are postponed.
 - V2 owns embedded optimization work.
@@ -546,8 +546,8 @@ struct PublishResult {
 
 - Credit is returned after `publish()`.
 - Credit is derived from `capacity - content.size()`.
-- Lane capacity is currently fixed by `DEFAULT_LANE_CAPACITY` as the
-  `niniFIFO_t` template capacity.
+- Lane capacity currently defaults to `DEFAULT_LANE_CAPACITY` inside
+  `niniFIFO`, then lives in the FIFO's runtime `capacity_` member.
 
 **Future possibilities**:
 
@@ -556,8 +556,7 @@ struct PublishResult {
 - Rate limiting.
 - Congestion control.
 - Returning updated credit from `receive()`.
-- Per-lane capacity configuration, which would require a different FIFO
-  capacity strategy than the current template argument.
+- Per-lane capacity configuration.
 
 **Revisit when**:
 
@@ -593,9 +592,6 @@ especially when API return types or ownership models change.
 
 ## Open Decisions
 
-- Should `subscribe()` keep returning `bool`, or should it return a dedicated
-  result enum?
-- Should unused enum values be removed until they are implemented?
 - Should missing-lane receive create a lane, or should it return a strict
   not-found result?
 
@@ -647,7 +643,7 @@ details belong inside the `lane_t` implementation.
 - `niniBUS.cpp` should be intentionally plain and easy to read.
 - `lane_t` helper methods such as size, capacity, and credit should be private
   unless there is a clear public API reason to expose them.
-- If FIFO storage changes from the current `niniFIFO_t` to another structure,
+- If FIFO storage changes from the current `niniFIFO` to another structure,
   the change should be isolated to `lane_t`.
 
 **V1 rule**:
@@ -667,9 +663,9 @@ stored, credited, or removed from a lane, make that change in `lane_t`.
 
 **Status**: accepted
 
-**Decision**: when `niniBUS` needs to publish to a lane that may or may not
-already exist, use `std::unordered_map::try_emplace()` to find or create the
-lane and then delegate to the stored lane object.
+**Decision**: when `niniBUS` needs to publish to or receive from a lane that may
+or may not already exist, use `std::unordered_map::try_emplace()` to find or
+create the lane and then delegate to the stored lane object.
 
 Current publish-side pattern:
 
@@ -678,12 +674,25 @@ auto [it, inserted] = lane_map_.try_emplace(laneID);
 return it->second.push(message);
 ```
 
+Current receive-side pattern:
+
+```cpp
+auto [it, inserted] = lane_map_.try_emplace(laneID);
+if (inserted)
+{
+    return ReceiveStatus::LazyLaneCreated;
+}
+return it->second.pop(message);
+```
+
 **Rationale**:
 
 - Lazy lane creation is part of the current bus behavior.
 - The bus needs an iterator to the stored lane so it can call `lane_t::push()`.
 - `try_emplace()` combines lookup and conditional insertion into one map
   operation.
+- In `receive()`, the `inserted` flag directly tells whether lazy lane creation
+  happened.
 - The older `find()` plus `operator[]` approach can search the map once to check
   for the lane, then search again to insert or access the missing lane.
 - `operator[]` also default-inserts a value before assignment, which can create
@@ -695,6 +704,7 @@ return it->second.push(message);
 **Consequences**:
 
 - `publish()` stays short: find or create the lane, then call `push()`.
+- `receive()` no longer needs a separate `find()` followed by `subscribe()`.
 - Missing-lane creation avoids repeated map lookups.
 - The code avoids accidental `operator[]` default insertion in publish paths.
 - The `inserted` flag is available if future behavior needs to distinguish a
@@ -706,26 +716,27 @@ return it->second.push(message);
 - Lane construction needs non-default capacity or policy arguments.
 - The map storage strategy changes away from `std::unordered_map`.
 
-## DD-020 - No Custom Destructors For Now
+## DD-020 - Follow Rule Of Zero For Simple Owners
 
 **Status**: accepted
 
-**Decision**: do not declare custom destructors for `niniBUS` or `lane_t` while
-they only own standard-library value members.
+**Decision**: do not declare custom destructors or copy constructors for
+`niniBUS`, `lane_t`, or `niniFIFO` while they only own standard-library value
+members.
 
 **Rationale**:
 
 - `niniBUS` stores lanes by value in `std::unordered_map`.
-- `lane_t` stores messages in `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
-- The FIFO stores messages in `std::array`, and these value members clean
+- `lane_t` stores messages in `niniFIFO<std::string>`.
+- The FIFO stores messages in `std::vector`, and these value members clean
   themselves up when their owning object is destroyed.
 - There are no raw owning pointers, file handles, threads, sockets, or other
   manual resources that need custom cleanup.
 - A destructor that only prints messages or has an empty body does not add
   behavior the library needs today.
-- Removing explicit destructors follows the C++ rule of zero: let the compiler
-  generate special member functions until the class truly owns a resource that
-  needs custom management.
+- Removing explicit destructors and copy constructors follows the C++ rule of
+  zero: let the compiler generate special member functions until the class truly
+  owns a resource that needs custom management.
 
 **Consequences**:
 
@@ -742,24 +753,28 @@ they only own standard-library value members.
 - Lane storage changes to raw pointers or manually managed memory.
 - A future transport layer opens files, sockets, threads, or OS handles.
 
-## DD-021 - Use A Fixed-Size FIFO For Lane Storage
+## DD-021 - Use `niniFIFO` With Runtime Capacity State
 
 **Status**: current
 
 **Decision**: each `lane_t` stores messages in:
 
 ```cpp
-niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY> content;
+niniFIFO<std::string> content;
 ```
 
-`niniFIFO_t` is a circular FIFO backed by `std::array<T, CAPACITY>`.
+`niniFIFO` is a circular FIFO backed by `std::vector<T>`. It owns the default
+capacity value and stores the active capacity in a runtime `capacity_` member.
 
 **Rationale**:
 
-- Lane capacity is currently fixed by `DEFAULT_LANE_CAPACITY`.
-- A fixed-size FIFO makes the queue limit explicit in the lane type.
-- `std::array<T, CAPACITY>` requires `CAPACITY` to be a compile-time constant,
-  which matches the current fixed-capacity design.
+- Lane capacity is a FIFO property, not a lane identity or bus routing property,
+  so `DEFAULT_LANE_CAPACITY` lives in `niniFIFO.h`.
+- `std::vector` provides contiguous storage like `std::array`.
+- Unlike `std::array`, `std::vector` can grow or be resized later if runtime
+  capacity configuration is added.
+- Keeping `capacity_` as a member moves capacity from a compile-time template
+  argument to runtime state.
 - The lane still exposes only `push()` and `pop()`; the bus does not depend on
   FIFO internals.
 
@@ -768,44 +783,42 @@ niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY> content;
 - `lane_t` is default-constructible because its FIFO has a default constructor.
 - `try_emplace(laneID)` can default-construct a missing lane directly in
   `lane_map_`.
-- Per-lane runtime capacity is not supported by the current FIFO type.
-- Changing lane capacity per lane later would require changing the FIFO storage
-  strategy or adding another lane construction path.
+- Per-lane runtime capacity is not exposed through the bus API yet, but the FIFO
+  storage no longer requires capacity as a template argument.
+- `niniFIFO.cpp` is no longer part of the build because the FIFO template is
+  implemented in the header.
 
 **Revisit when**:
 
-- Per-lane runtime capacity is required.
-- Memory measurements show `std::array` per lane is too large.
+- Public per-lane capacity configuration is required.
+- Memory measurements show the current `std::vector` storage is too large.
 - Queue behavior needs dynamic capacity, allocation control, or richer
   statistics.
 
-## DD-022 - Keep Template FIFO Implementation In The Header
+## DD-022 - Keep FIFO Operations Status-Oriented
 
 **Status**: accepted
 
-**Decision**: keep `niniFIFO_t` method definitions in `niniFIFO.h`.
-`niniFIFO.cpp` remains only a placeholder translation unit for the FIFO
-component.
+**Decision**: `niniFIFO::push_back()` and `niniFIFO::pop_front()` return
+`FIFOStatus`.
 
 **Rationale**:
 
-- `niniFIFO_t` is a class template.
-- The compiler must see template method definitions at the point where a
-  concrete type such as `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>` is
-  instantiated.
-- Putting unqualified template method definitions in `niniFIFO.cpp` caused
-  errors such as "use of class template 'niniFIFO_t' requires template
-  arguments" and "unknown type name 'T'".
+- `push_back()` can fail when the FIFO is full.
+- `pop_front()` can fail when the FIFO is empty.
+- Returning status keeps FIFO mutation APIs aligned with the rest of the project
+  style, where operations report success/failure explicitly.
+- `front()` remains an STL-style accessor that returns the current front item.
 
 **Consequences**:
 
-- The template implementation is header-owned.
-- The build can still compile `niniFIFO.cpp`, but it does not contain the
-  template method bodies.
-- Future non-template FIFO code can live in `niniFIFO.cpp` if needed.
+- `lane_t::push()` can map `FIFOStatus::FULL` to `PublishStatus::LaneFull`.
+- `lane_t::pop()` can use the FIFO state to map empty queues to
+  `ReceiveStatus::LaneEmpty`.
+- FIFO callers have one consistent way to see mutation failure.
 
 **Revisit when**:
 
-- Explicit template instantiation is introduced intentionally.
-- `niniFIFO_t` stops being a template.
-- FIFO implementation size becomes a compile-time problem.
+- FIFO APIs need exceptions instead of status values.
+- The project introduces richer error payloads.
+- `front()` needs a non-throwing alternative.

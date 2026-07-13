@@ -15,9 +15,8 @@ ReceiveStatus lane_t::pop(std::string& message)
     message.clear(); //clear the message string if any stray data
     if (!content.isEmpty())
     {
-        std::string msg = content.front();
+        message = content.front();
         content.pop_front();
-        message = msg;
         return ReceiveStatus::Ok;
     }
     return ReceiveStatus::LaneEmpty;

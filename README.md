@@ -3,7 +3,7 @@
 `niniBUS` is a small C++ in-process message bus.
 
 It stores string messages in numeric lanes. Callers can publish messages to a
-lane, subscribe to a lane, and receive queued messages from a lane.
+lane and receive queued messages from a lane.
 
 Current project phase: V1 - Smarter Bus.
 
@@ -16,13 +16,11 @@ using laneID_t = uint32_t;
 
 enum class PublishStatus {
     Ok,
-    LaneNotFound,
     LaneFull
 };
 
 enum class ReceiveStatus {
     Ok,
-    LaneNotFound,
     LaneEmpty,
     LazyLaneCreated
 };
@@ -34,15 +32,16 @@ struct PublishResult {
 
 PublishResult publish(laneID_t laneID, const std::string& message);
 ReceiveStatus receive(laneID_t laneID, std::string& message);
-bool subscribe(laneID_t laneID);
 ```
 
 ## How It Works
 
-- A lane is created lazily when it is first published to or subscribed to.
-- Each lane stores messages in `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
-- Lanes use `DEFAULT_LANE_CAPACITY` as their current compile-time bounded
-  capacity.
+- A lane is created lazily when it is first published to or received from.
+- Each lane stores messages in `niniFIFO<std::string>`.
+- `niniFIFO` owns `DEFAULT_LANE_CAPACITY` and stores its current capacity in a
+  runtime `capacity_` member.
+- FIFO storage uses `std::vector`, which is contiguous like `std::array` while
+  leaving room for future growth/configuration.
 - The lane ID is stored as the key in the bus map, not inside the `lane_t`
   object.
 - `lane_t` keeps its queue internals private and owns push/pop behavior.
@@ -53,7 +52,8 @@ bool subscribe(laneID_t laneID);
 - `PublishResult::Credit` reports remaining lane capacity after the publish
   attempt.
 - `receive()` removes the oldest message from a lane when available.
-- `subscribe()` ensures that a lane exists.
+- `receive()` creates a missing lane and returns
+  `ReceiveStatus::LazyLaneCreated`.
 
 Each lane has one queue, so multiple receivers on the same lane compete for
 messages. A received message is removed and cannot be received again.
@@ -66,9 +66,6 @@ messages. A received message is removed and cannot be received again.
 - `Status == PublishStatus::LaneFull` when the lane has no remaining credit.
 - `Credit` is the number of messages that can still be accepted by that lane.
 
-`PublishStatus::LaneNotFound` exists in the API, but the current implementation
-creates missing lanes lazily instead of returning that value.
-
 ## Receive Results
 
 `receive()` returns:
@@ -78,17 +75,13 @@ creates missing lanes lazily instead of returning that value.
   for future messages.
 - `ReceiveStatus::LaneEmpty` when the lane exists but has no queued messages.
 
-`ReceiveStatus::LaneNotFound` exists in the API, but the current implementation
-creates missing lanes lazily instead of returning that value.
-
 ## Repository Layout
 
 - `niniBUS.h` - public bus API and lane registry.
 - `niniBUS.cpp` - bus map lookup, lazy lane creation, and delegation.
 - `Lane.h` - lane API and lane-local queue state.
 - `Lane.cpp` - lane-local push/pop behavior.
-- `niniFIFO.h` - header-only fixed-size FIFO template.
-- `niniFIFO.cpp` - placeholder translation unit for the FIFO component.
+- `niniFIFO.h` - header-only FIFO template.
 - `status.h` - publish and receive status/result types.
 - `Makefile` - builds the `niniBUS` static library.
 - `example/hello.cpp` - assert-based example tests.
@@ -180,18 +173,17 @@ make clean
 - Multiple lanes do not interfere.
 - Receive from an empty lane.
 - Publish to a non-existing lane.
-- Subscribe behavior.
+- Lazy lane creation from `receive()`.
 - Lane credit.
 - Lane full behavior.
 
 ## Important Limitations
 
 - The bus is not thread-safe.
-- `subscribe()` only creates a lane; it does not track subscriber count.
-- `PublishStatus::LaneNotFound` and `ReceiveStatus::LaneNotFound` are defined
-  but not currently produced by the implementation.
-- Lane capacity currently uses `DEFAULT_LANE_CAPACITY` as a compile-time FIFO
-  capacity; per-lane capacity configuration is not exposed through the bus API
+- There is no `subscribe()` API; missing lanes are created lazily by
+  `publish()` and `receive()`.
+- Lane capacity currently defaults to `DEFAULT_LANE_CAPACITY` inside
+  `niniFIFO`; per-lane capacity configuration is not exposed through the bus API
   yet.
 - Lane queue internals are private; callers interact through the bus API rather
   than directly mutating lane queues.

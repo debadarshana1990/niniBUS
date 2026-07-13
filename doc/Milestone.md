@@ -28,7 +28,7 @@ TODO:
 - [x] Create lanes lazily.
 - [x] Implement `publish()`.
 - [x] Implement `receive()`.
-- [x] Implement `subscribe()`.
+- [x] Remove `subscribe()` after lazy lane creation moved into `receive()`.
 - [x] Preserve FIFO ordering within each lane.
 - [x] Keep lanes independent from each other.
 - [x] Store lanes without raw owning pointers.
@@ -52,7 +52,7 @@ Out of scope:
 - Multi-threading.
 - IPC.
 - Back pressure.
-- Runtime-configurable FIFO capacity.
+- Explicit subscription registry.
 - Lock-free structures.
 - Performance optimization.
 
@@ -75,8 +75,8 @@ TODO:
 - [x] Remove stale comments.
 - [x] Remove unused headers.
 - [x] Make API naming and parameter names consistent.
-- [x] Decide whether `subscribe()` should return `bool` or a result enum.
-- [x] Decide whether unused enum values should be implemented or removed.
+- [x] Remove `subscribe()` because it only duplicated lazy lane creation.
+- [x] Remove unused enum values until they are needed.
 - [x] Make lane size, capacity, and credit helpers private.
 - [x] Add unit tests for publish/receive FIFO behavior.
 - [x] Add unit tests for multiple independent lanes.
@@ -108,8 +108,10 @@ Implemented so far:
 - `lane_t::push()` returns `PublishStatus::LaneFull` when the lane has no
   remaining credit.
 - `PublishResult::Credit` gives publisher feedback after each publish attempt.
-- `lane_t` stores messages in `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
-- `niniFIFO_t` is a fixed-size circular FIFO backed by `std::array`.
+- `lane_t` stores messages in `niniFIFO<std::string>`.
+- `niniFIFO` is a circular FIFO backed by `std::vector`.
+- FIFO capacity now lives in runtime `capacity_` state with
+  `DEFAULT_LANE_CAPACITY` as the default.
 - Example tests cover lane capacity, lane credit, and full-lane behavior.
 
 TODO:
@@ -123,13 +125,16 @@ TODO:
 - [x] Document that queue behavior changes should stay isolated in `lane_t`.
 - [x] Decide whether lanes should have bounded queues.
 - [x] Add default bounded lane capacity.
-- [x] Add project-owned fixed-size FIFO storage.
-- [x] Move `niniFIFO_t` template method definitions into `niniFIFO.h`.
-- [x] Add `niniFIFO.cpp` to the root static-library build.
+- [x] Add project-owned FIFO storage.
+- [x] Move `DEFAULT_LANE_CAPACITY` into `niniFIFO.h`.
+- [x] Replace compile-time FIFO capacity with runtime `capacity_`.
+- [x] Use `std::vector` for contiguous FIFO storage.
+- [x] Make `push_back()` and `pop_front()` return `FIFOStatus`.
+- [x] Keep FIFO template method definitions in `niniFIFO.h`.
 - [x] Implement `PublishStatus::LaneFull`.
 - [x] Add lane credit through `PublishResult::Credit`.
 - [x] Add publisher feedback for accepted and rejected messages.
-- [ ] Decide whether `PublishStatus::LaneNotFound` is needed.
+- [x] Remove unused `PublishStatus::LaneNotFound`.
 - [x] Make lane size, capacity, and credit helpers private.
 - [x] Decide whether public queue size/statistics accessors are needed.
 - [x] Add tests for queue capacity.
@@ -163,7 +168,7 @@ systems.
 TODO:
 
 - [ ] Measure memory used by one `lane_t`.
-- [ ] Measure memory used by one `niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY>`.
+- [ ] Measure memory used by one `niniFIFO<std::string>`.
 - [ ] Measure overhead of `std::unordered_map<laneID_t, lane_t>`.
 - [ ] Compare `unordered_map` with a fixed-size lane table.
 - [ ] Decide whether dynamic allocation from STL containers is acceptable.
