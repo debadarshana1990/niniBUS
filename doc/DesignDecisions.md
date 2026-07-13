@@ -259,9 +259,9 @@ std::unordered_map<laneID_t, lane_t> lane_map_;
 
 **Status**: accepted
 
-**Decision**: `lane_t` keeps `capacity`, `content`, and capacity helper functions
-private. It exposes push/pop behavior instead of allowing direct mutation or
-bus-side queue inspection.
+**Decision**: `lane_t` keeps `content` and credit calculation private. It
+exposes push/pop behavior instead of allowing direct mutation or bus-side queue
+inspection.
 
 Current public lane operations:
 
@@ -270,11 +270,9 @@ PublishResult push(const std::string& message);
 ReceiveStatus pop(std::string& message);
 ```
 
-Current private lane helpers:
+Current private lane helper:
 
 ```cpp
-uint32_t qsize() const;
-uint32_t getCapacity() const;
 uint32_t getCredit() const;
 ```
 
@@ -291,7 +289,7 @@ uint32_t getCredit() const;
 
 - `niniBUS` uses `push()` and `pop()` instead of mutating the lane queue
   directly.
-- `qsize()`, `getCapacity()`, and `getCredit()` are private helpers.
+- `getCredit()` is a private helper.
 - Queue implementation details are less exposed.
 - Future bounded FIFO or custom queue work can start inside `lane_t`.
 
@@ -775,6 +773,9 @@ capacity value and stores the active capacity in a runtime `capacity_` member.
   capacity configuration is added.
 - Keeping `capacity_` as a member moves capacity from a compile-time template
   argument to runtime state.
+- `buffer_` is initialized from `capacity_` in the constructor initializer list,
+  so the vector starts at the FIFO capacity without a separate `resize()` call
+  in the constructor body.
 - The lane still exposes only `push()` and `pop()`; the bus does not depend on
   FIFO internals.
 

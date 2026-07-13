@@ -27,6 +27,10 @@ assertion stops the program.
 | Receive clears output before empty pop | Receive a real message; set output to stale data; receive from empty lane. | `test_receive_clears_output_on_empty_lane()` | Pass | Confirms empty receive clears old output data and returns `ReceiveStatus::LaneEmpty`. |
 | Direct FIFO push, pop, and front behavior | Create FIFO; check empty state; pop empty; push two; inspect `front()`; pop until empty. | `test_direct_fifo_push_pop_front_status()` | Pass | Covers direct `niniFIFO` `push_back()`, `pop_front()`, `front()`, `isEmpty()`, `size()`, and status behavior. |
 | Direct FIFO full status | Push `DEFAULT_LANE_CAPACITY` items; check full state; attempt overflow push. | `test_direct_fifo_full_status()` | Pass | Confirms `FIFOStatus::FULL` and that failed overflow does not increase size. |
+| Direct FIFO wraparound | Fill FIFO with `A0`-`A9`; pop five; push `B0`-`B4`; drain remaining `A` values; drain wrapped `B` values. | `test_fifo_wraparound()` | Pass | Proves tail wrap, head wrap, order preservation across wraparound, and queue reuse. |
+| Direct FIFO empty negative paths | Pop from empty FIFO twice; call `front()` on empty FIFO and catch `std::runtime_error`. | `test_fifo_empty_negative_paths()` | Pass | Confirms empty pop returns `FIFOStatus::EMPTY` repeatedly and empty `front()` throws. |
+| Direct FIFO overflow does not corrupt data | Fill FIFO; attempt two overflow pushes; drain original values. | `test_fifo_overflow_does_not_corrupt_order()` | Pass | Confirms rejected overflow writes do not change size or corrupt queued order. |
+| Bus rejected publish is not received | Fill a bus lane; publish one rejected message; drain accepted messages; receive empty. | `test_bus_rejected_publish_is_not_received()` | Pass | Confirms `PublishStatus::LaneFull` does not enqueue the rejected message. |
 
 ## Expected Output
 
@@ -42,6 +46,10 @@ Successful test output includes:
 [PASS] receive clears output before empty pop
 [PASS] direct FIFO push_back pop_front and front behavior
 [PASS] direct FIFO reports full status
+[PASS] direct FIFO wraparound preserves order
+[PASS] direct FIFO empty pop and front negative paths
+[PASS] direct FIFO overflow does not corrupt queued data
+[PASS] bus rejected publish is not received later
 All niniBUS example tests passed.
 ```
 
@@ -59,6 +67,9 @@ Covered:
 - Lane capacity and credit.
 - Full-lane rejection.
 - FIFO order after full-lane recovery.
+- Direct FIFO wraparound of both head and tail indexes.
+- Direct FIFO negative behavior for empty pop, empty front, and overflow.
+- Bus-level negative behavior for rejected publish.
 - Direct FIFO `push_back()`, `pop_front()`, `front()`, `isEmpty()`, `isFull()`,
   `size()`, and `getCapacity()` behavior.
 
@@ -68,4 +79,3 @@ Not covered yet:
 - IPC.
 - Runtime capacity configuration.
 - Multi-producer or multi-consumer concurrency.
-- Exception behavior from calling `front()` on an empty FIFO.

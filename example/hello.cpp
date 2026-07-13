@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 #include "niniBUS.h"
@@ -210,6 +211,114 @@ void test_direct_fifo_full_status()
     print_pass("direct FIFO reports full status");
 }
 
+void test_fifo_wraparound()
+{
+    niniFIFO<std::string> fifo;
+
+    for (int i = 0; i < 10; ++i)
+    {
+        assert(fifo.push_back("A" + std::to_string(i)) == FIFOStatus::SUCCESS);
+    }
+
+    for (int i = 0; i < 5; ++i)
+    {
+        assert(fifo.front() == "A" + std::to_string(i));
+        assert(fifo.pop_front() == FIFOStatus::SUCCESS);
+    }
+
+    for (int i = 0; i < 5; ++i)
+    {
+        assert(fifo.push_back("B" + std::to_string(i)) == FIFOStatus::SUCCESS);
+    }
+
+    for (int i = 5; i < 10; ++i)
+    {
+        assert(fifo.front() == "A" + std::to_string(i));
+        assert(fifo.pop_front() == FIFOStatus::SUCCESS);
+    }
+
+    for (int i = 0; i < 5; ++i)
+    {
+        assert(fifo.front() == "B" + std::to_string(i));
+        assert(fifo.pop_front() == FIFOStatus::SUCCESS);
+    }
+
+    assert(fifo.isEmpty());
+
+    print_pass("direct FIFO wraparound preserves order");
+}
+
+void test_fifo_empty_negative_paths()
+{
+    niniFIFO<std::string> fifo;
+    bool threw = false;
+
+    assert(fifo.pop_front() == FIFOStatus::EMPTY);
+    assert(fifo.pop_front() == FIFOStatus::EMPTY);
+    assert(fifo.isEmpty());
+
+    try
+    {
+        fifo.front();
+    }
+    catch (const std::runtime_error&)
+    {
+        threw = true;
+    }
+
+    assert(threw);
+
+    print_pass("direct FIFO empty pop and front negative paths");
+}
+
+void test_fifo_overflow_does_not_corrupt_order()
+{
+    niniFIFO<std::string> fifo;
+
+    for (uint32_t i = 0; i < DEFAULT_LANE_CAPACITY; i++)
+    {
+        assert(fifo.push_back("keep-" + std::to_string(i)) == FIFOStatus::SUCCESS);
+    }
+
+    assert(fifo.push_back("drop-1") == FIFOStatus::FULL);
+    assert(fifo.push_back("drop-2") == FIFOStatus::FULL);
+    assert(fifo.size() == DEFAULT_LANE_CAPACITY);
+
+    for (uint32_t i = 0; i < DEFAULT_LANE_CAPACITY; i++)
+    {
+        assert(fifo.front() == "keep-" + std::to_string(i));
+        assert(fifo.pop_front() == FIFOStatus::SUCCESS);
+    }
+
+    assert(fifo.isEmpty());
+
+    print_pass("direct FIFO overflow does not corrupt queued data");
+}
+
+void test_bus_rejected_publish_is_not_received()
+{
+    niniBUS bus;
+    std::string message;
+
+    for (uint32_t i = 0; i < DEFAULT_LANE_CAPACITY; i++)
+    {
+        assert(bus.publish(70, "accepted-" + std::to_string(i)).Status == PublishStatus::Ok);
+    }
+
+    assert(bus.publish(70, "rejected").Status == PublishStatus::LaneFull);
+
+    for (uint32_t i = 0; i < DEFAULT_LANE_CAPACITY; i++)
+    {
+        assert(bus.receive(70, message) == ReceiveStatus::Ok);
+        assert(message == "accepted-" + std::to_string(i));
+    }
+
+    assert(bus.receive(70, message) == ReceiveStatus::LaneEmpty);
+    assert(message.empty());
+
+    print_pass("bus rejected publish is not received later");
+}
+
 int main()
 {
     test_fifo_ordering();
@@ -221,6 +330,10 @@ int main()
     test_receive_clears_output_on_empty_lane();
     test_direct_fifo_push_pop_front_status();
     test_direct_fifo_full_status();
+    test_fifo_wraparound();
+    test_fifo_empty_negative_paths();
+    test_fifo_overflow_does_not_corrupt_order();
+    test_bus_rejected_publish_is_not_received();
 
     std::cout << "All niniBUS example tests passed." << std::endl;
     return 0;

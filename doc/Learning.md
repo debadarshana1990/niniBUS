@@ -538,6 +538,22 @@ niniFIFO() : capacity_(DEFAULT_LANE_CAPACITY), head_(0), tail_(0), currSize_(0)
 }
 ```
 
+The current code moved the vector setup into the initializer list:
+
+```cpp
+niniFIFO()
+    : capacity_(DEFAULT_LANE_CAPACITY),
+      buffer_(capacity_),
+      head_(0),
+      tail_(0),
+      currSize_(0)
+{
+}
+```
+
+That keeps object construction direct: initialize the capacity, construct the
+vector at that capacity, then initialize the indexes and size.
+
 ### Stage 5 - `receive()` Can Use `try_emplace()` Too
 
 Older receive code used `find()` first, then called `subscribe()` to create a

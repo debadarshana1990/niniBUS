@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <array>
 #include <stdexcept>
 #include <vector>
 
@@ -17,16 +16,15 @@ template <typename T>
 class niniFIFO
 {
     private:
-        std::vector<T> buffer_;
         uint32_t capacity_;
+        std::vector<T> buffer_;
         uint32_t head_;
         uint32_t tail_;
         uint32_t currSize_;
     public:
     //public API
-    niniFIFO() : capacity_(DEFAULT_LANE_CAPACITY), head_(0), tail_(0), currSize_(0)
+    niniFIFO() : capacity_(DEFAULT_LANE_CAPACITY), buffer_(capacity_), head_(0), tail_(0), currSize_(0)
     {
-        buffer_.resize(capacity_);
     }
 
     FIFOStatus push_back(const T& message)

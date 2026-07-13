@@ -75,13 +75,10 @@ Public functions today:
 
 Private helper functions:
 
-- `qsize()`: return the current queued message count.
-- `getCapacity()`: return `content.getCapacity()`.
 - `getCredit()`: return remaining queue capacity.
 
-The queue data and capacity helpers are private. `niniBUS` does not inspect
-lane size or capacity directly; it delegates to `lane_t::push()` and
-`lane_t::pop()`.
+The queue data and credit helper are private. `niniBUS` does not inspect lane
+size or capacity directly; it delegates to `lane_t::push()` and `lane_t::pop()`.
 
 `lane_t::getCredit()` returns remaining queue capacity:
 
@@ -117,7 +114,8 @@ Current FIFO operations:
 
 `std::vector` is used instead of `std::array` because both provide contiguous
 storage, but `vector` can support runtime capacity and future growth. The
-current constructor resizes the vector to `DEFAULT_LANE_CAPACITY`.
+current constructor initializes `capacity_` first, then initializes `buffer_`
+with that capacity in the initializer list.
 
 `DEFAULT_LANE_CAPACITY` lives with the FIFO implementation because capacity is a
 FIFO concern, not lane identity or bus routing state.

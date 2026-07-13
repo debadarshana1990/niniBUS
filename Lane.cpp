@@ -2,9 +2,8 @@
 
 PublishResult lane_t::push(const std::string& message)
 {
-    if (qsize() < getCapacity())
+    if(content.push_back(message) == FIFOStatus::SUCCESS)
     {
-        content.push_back(message);
         return { getCredit(), PublishStatus::Ok };
     }
     return { 0, PublishStatus::LaneFull };
@@ -16,8 +15,10 @@ ReceiveStatus lane_t::pop(std::string& message)
     if (!content.isEmpty())
     {
         message = content.front();
-        content.pop_front();
-        return ReceiveStatus::Ok;
+        if (content.pop_front() == FIFOStatus::SUCCESS)
+        {
+            return ReceiveStatus::Ok;
+        }
     }
     return ReceiveStatus::LaneEmpty;
 }
