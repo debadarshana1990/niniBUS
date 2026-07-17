@@ -22,7 +22,7 @@ class niniFIFO
         uint32_t currSize_;
     public:
     //public API
-    niniFIFO(uint32_t capacity) : capacity_(capacity), buffer_(capacity), head_(0), tail_(0), currSize_(0)
+    explicit niniFIFO(uint32_t capacity) : capacity_(capacity), buffer_(capacity), head_(0), tail_(0), currSize_(0)
     {
     }
 
@@ -56,5 +56,5 @@ class niniFIFO
     bool isEmpty() const {return (currSize_ == 0);}
     bool isFull() const {return (currSize_ == capacity_);}
     uint32_t size() const {return currSize_;}
-    uint32_t getCapacity() const { return capacity_; }
+    uint32_t capacity() const { return capacity_; }
 };

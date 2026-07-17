@@ -130,7 +130,7 @@ communication path. Applications assign meaning to lane IDs.
 ```cpp
 PublishResult publish(laneID_t laneID, const std::string& message);
 ReceiveResult receive(laneID_t laneID, std::string& message);
-CreateLaneStatus CreateLane(laneID_t laneID, uint32_t capacity);
+CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
 ```
 
 **Rationale**:
@@ -140,7 +140,7 @@ CreateLaneStatus CreateLane(laneID_t laneID, uint32_t capacity);
 - `receive()` clearly communicates destructive FIFO consumption and returns a
   `ReceiveResult` so callers can distinguish success, empty lane, lazy lane
   creation, and pending messages after a successful pop.
-- `CreateLane()` supports applications that need a known per-lane capacity
+- `createLane()` supports applications that need a known per-lane capacity
   before the first message is published.
 - A separate `subscribe()` function is not required right now because
   `receive()` already lazily creates missing lanes.
@@ -365,7 +365,7 @@ find or create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
 **Status**: accepted
 
 **Decision**: keep lazy lane creation when lanes are first published to or
-received from, while also allowing explicit creation through `CreateLane()`.
+received from, while also allowing explicit creation through `createLane()`.
 
 **Rationale**:
 
@@ -558,7 +558,7 @@ struct PublishResult {
 
 - Credit is returned after `publish()`.
 - Credit is derived from `capacity - content.size()`.
-- A lane created by `CreateLane()` uses the requested capacity. A lane created
+- A lane created by `createLane()` uses the requested capacity. A lane created
   lazily uses `DEFAULT_LANE_CAPACITY`. The FIFO stores the selected value in
   its runtime `capacity_` member.
 
@@ -702,7 +702,7 @@ Explicit creation passes the requested capacity to the lane constructor:
 
 ```cpp
 auto [it, inserted] = lane_map_.try_emplace(laneID, capacity);
-return inserted ? CreateLaneStatus::ok : CreateLaneStatus::LaneExist;
+return inserted ? CreateLaneStatus::Ok : CreateLaneStatus::LaneExists;
 ```
 
 **Rationale**:
@@ -789,7 +789,7 @@ a capacity and stores it in a runtime `capacity_` member.
 **Rationale**:
 
 - The lane chooses either its default capacity or the value supplied through
-  `CreateLane()`, then passes that value to the FIFO.
+  `createLane()`, then passes that value to the FIFO.
 - `std::vector` provides contiguous storage like `std::array`.
 - Unlike `std::array`, `std::vector` supports runtime-selected capacity.
 - Keeping `capacity_` as a member moves capacity from a compile-time template
@@ -806,7 +806,7 @@ a capacity and stores it in a runtime `capacity_` member.
   capacity argument.
 - `try_emplace(laneID)` can default-construct a missing lane directly in
   `lane_map_`.
-- Per-lane runtime capacity is exposed through `CreateLane()`; lazy creation
+- Per-lane runtime capacity is exposed through `createLane()`; lazy creation
   continues to use `DEFAULT_LANE_CAPACITY`.
 - `niniFIFO.cpp` is no longer part of the build because the FIFO template is
   implemented in the header.

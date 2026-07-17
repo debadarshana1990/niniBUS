@@ -50,14 +50,14 @@ struct ReceiveResult {
 };
 
 enum class CreateLaneStatus {
-    ok,
-    LaneExist,
-    not_ok
+    Ok,
+    LaneExists,
+    InvalidCapacity
 };
 
 PublishResult publish(laneID_t laneID, const std::string& message);
 ReceiveResult receive(laneID_t laneID, std::string& message);
-CreateLaneStatus CreateLane(laneID_t laneID, uint32_t capacity);
+CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
 ```
 
 `laneID_t` identifies a logical message lane. `lane_t` is the lane object stored
@@ -97,7 +97,7 @@ size or capacity directly; it delegates to `lane_t::push()` and `lane_t::pop()`.
 `lane_t::getCredit()` returns remaining queue capacity:
 
 ```cpp
-content.getCapacity() - content.size()
+content.capacity() - content.size()
 ```
 
 ### `niniFIFO`
@@ -124,7 +124,7 @@ Current FIFO operations:
 - `pop_front()`: remove the oldest element, returning `FIFOStatus`.
 - `front()`: return the oldest element, following the STL-style naming used by
   queue-like containers.
-- `isEmpty()`, `isFull()`, `size()`, and `getCapacity()`: inspect FIFO state.
+- `isEmpty()`, `isFull()`, `size()`, and `capacity()`: inspect FIFO state.
 
 `std::vector` is used instead of `std::array` because both provide contiguous
 storage, but `vector` can support runtime capacity and future growth. The
@@ -155,7 +155,7 @@ create the correct lane and delegate queue behavior to `lane_t`.
 
 A lane can be created by:
 
-- `CreateLane(laneID, capacity)` for an explicit buffer capacity.
+- `createLane(laneID, capacity)` for an explicit nonzero buffer capacity.
 - `publish(laneID, message)` when publishing to a missing lane.
 - `receive(laneID, message)` when receiving from a missing lane.
 
@@ -171,8 +171,9 @@ pass an explicit temporary `lane_t()`.
 
 Current implementation:
 
-- `CreateLane()` calls `try_emplace(laneID, capacity)`. It returns
-  `CreateLaneStatus::ok` for a new lane and `CreateLaneStatus::LaneExist` when
+- `createLane()` rejects zero with `CreateLaneStatus::InvalidCapacity`, then
+  calls `try_emplace(laneID, capacity)`. It returns `CreateLaneStatus::Ok` for
+  a new lane and `CreateLaneStatus::LaneExists` when
   the lane already exists. Existing state and capacity are not replaced.
 - `publish()` creates a missing lane with the default `lane_t` constructor.
 - The default lane owns a FIFO whose runtime `capacity_` starts at
@@ -313,7 +314,7 @@ Current behavior:
 ## Recommended Next Improvements
 
 1. Decide whether public lane statistics are needed.
-2. Decide how zero-capacity lane requests should be validated.
+2. Decide whether a maximum lane capacity is needed.
 3. Remove unused result values or implement the conditions that produce them.
 4. Add mutex protection if the bus will be used from multiple threads.
 5. Decide whether the bus should remain a competing-consumer queue or become a

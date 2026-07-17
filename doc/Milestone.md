@@ -4,7 +4,7 @@ This roadmap keeps the project focused. Each version should answer one
 engineering question and should not grow just because the next topic looks
 interesting.
 
-Current active milestone: V1.2 - V1 Cleanup and Completion.
+Current active milestone: V1.3 - Runtime Capacity and FIFO API Refinement.
 
 ## V0 - Basic Message Bus
 
@@ -88,7 +88,7 @@ Replace the lane's direct STL queue usage with a project-owned circular FIFO.
   - `isEmpty()`
   - `isFull()`
   - `size()`
-  - `getCapacity()`
+  - `capacity()`
 - Add `FIFOStatus`:
   - `SUCCESS`
   - `FULL`
@@ -145,7 +145,7 @@ before V1.3 introduced runtime capacity:
 - Clean naming and documentation.
 - Add a dedicated wraparound test.
 - Update the test report.
-- Mark the current V1 implementation complete.
+- Mark the fixed-capacity V1.2 implementation complete.
 - Run:
 
 ```bash
@@ -175,11 +175,11 @@ make -C example test
 
 ### V1.3 - Runtime Capacity and FIFO API Refinement
 
-Status: in progress.
+Status: implementation complete; pending merge and V1 tag.
 
 ### Objective
 
-Complete the deferred FIFO API work before starting concurrency.
+Complete the deferred FIFO API work before beginning V2 broadcast delivery.
 
 This is the final part of V1.
 
@@ -187,64 +187,46 @@ This is the final part of V1.
 
 #### Runtime Capacity
 
-Allow FIFO capacity to be selected during construction.
-
-Possible API:
+FIFO capacity is selected during construction:
 
 ```cpp
-explicit niniFIFO(uint32_t capacity = DEFAULT_LANE_CAPACITY);
+explicit niniFIFO(uint32_t capacity);
 ```
 
 Current bus API:
 
 ```cpp
-CreateLaneStatus CreateLane(laneID_t laneID, uint32_t capacity);
+CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
 ```
 
-`CreateLane()` now creates a lane with the requested capacity. Publishing or
+`createLane()` now creates a lane with the requested capacity. Publishing or
 receiving on an unknown lane still creates it with `DEFAULT_LANE_CAPACITY`.
-Calling `CreateLane()` for an existing ID returns `LaneExist` and preserves the
+Calling `createLane()` for an existing ID returns `LaneExists` and preserves the
 existing lane.
 
 #### Capacity Validation
 
-Define behavior for invalid capacity.
-
-Questions:
-
-- Should capacity zero throw?
-- Should it assert?
-- Should construction fail through another mechanism?
+Capacity zero is invalid. `createLane()` returns
+`CreateLaneStatus::InvalidCapacity` without creating the lane or reserving its
+ID. Capacity one is the smallest valid lane capacity.
 
 #### Capacity Edge Cases
 
-Add tests for:
+Covered edge cases:
 
-- Capacity = 1.
-- Small capacities.
-- Large configured capacities.
-- Zero capacity.
-- Repeated wraparound with custom capacity.
+- Capacity one, including full, receive, and reuse behavior.
+- Small custom capacities.
+- Zero-capacity rejection without lane creation.
+- Wraparound with a custom capacity of three.
 
 #### Public API Naming
 
-Refine the inspection API.
-
-Current APIs:
-
-```cpp
-size()
-getCapacity()
-```
-
-Potential final APIs:
+The FIFO inspection API is finalized with STL-style names:
 
 ```cpp
 size()
 capacity()
 ```
-
-The final naming should be consistent with STL conventions where appropriate.
 
 #### `front()` Behavior Review
 
@@ -255,32 +237,28 @@ front()
 pop_front()
 ```
 
-Review only the empty-access policy:
-
-- Runtime exception.
-- Assertion.
-- Documented precondition.
-- Another embedded-friendly policy.
+Calling `front()` on an empty FIFO throws `std::runtime_error`. This behavior is
+documented and covered by `test_fifo_empty_negative_paths()`.
 
 Do not replace it with a combined read-and-pop API unless a concrete
 requirement appears.
 
 #### Lane Capacity Configuration
 
-Decide whether `Lane` should:
-
-- Always use the default FIFO capacity.
-- Accept capacity during construction.
-- Obtain capacity from bus configuration.
+`lane_t` accepts capacity during construction and passes it to `niniFIFO`.
+Explicit creation uses the capacity passed to `createLane()`; lazy creation by
+`publish()` or `receive()` uses `DEFAULT_LANE_CAPACITY`. Lane capacity is not
+changed after creation.
 
 ### Tests
 
 - Runtime capacity constructor. (covered)
-- Capacity = 1.
-- Zero-capacity policy.
-- Custom-capacity full condition. (covered through `CreateLane()`)
-- Custom-capacity wraparound.
-- Size and capacity APIs.
+- Capacity = 1. (covered)
+- Zero-capacity policy. (zero is rejected with `InvalidCapacity`)
+- Custom-capacity full condition. (covered through `createLane()`)
+- Custom-capacity wraparound. (covered)
+- Size and capacity APIs. (covered)
+- Empty `front()` exception behavior. (covered)
 - Lane behavior with configured capacity. (covered)
 
 ### Definition Of Done
@@ -317,17 +295,19 @@ At the end of V1, `niniBUS` has:
 Can I make the single-threaded bus bounded, predictable, reusable, and fully
 tested?
 
-## V2 - Competing Messages / Broadcast
+## V2 - Broadcast Delivery Semantics
 
 ### Objective
 
-Support multiple subscribers per lane with message competition or broadcast modes.
+Evolve the V1 competing-consumer baseline to support intentional broadcast
+delivery to multiple subscribers per lane.
 
 ### Features
 
 - Multi-subscriber support per lane.
-- Competing message model (one subscriber gets the message).
-- Broadcast message model (all subscribers get the message).
+- Preserve and document the V1 competing-consumer behavior as the baseline.
+- Add a broadcast message model in which all current subscribers receive the
+  message.
 - Lane subscription management.
 - Subscriber lifecycle.
 - Message distribution strategy.
@@ -343,7 +323,7 @@ Explore design patterns for multi-subscriber message delivery.
 
 ### Questions
 
-- Competing vs broadcast - which modes?
+- Should competing and broadcast delivery both remain selectable modes?
 - Per-lane or per-subscriber buffers?
 - How to handle backpressure from slow subscribers?
 - Subscriber identification.
@@ -539,7 +519,7 @@ FIFO should know how to manage queue state, not where the memory comes from.
 
 Can `niniBUS` control and predict its own memory usage?
 
-## V5 - Inter-Process Communication
+## V6 - Inter-Process Communication
 
 ### Objective
 
@@ -602,8 +582,6 @@ Can `niniBUS` cross a process boundary while preserving its semantics?
 These are intentionally outside the main roadmap until a real need appears.
 
 - Priority lanes.
-- Broadcast.
-- Multiple subscribers.
 - Consumer queue-depth feedback.
 - Message filtering.
 - Wildcard subscription.

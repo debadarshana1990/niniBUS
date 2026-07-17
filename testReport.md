@@ -23,7 +23,10 @@ assertion stops the program.
 | Publish lazily creates missing lane | Publish to lane 20; receive from lane 20. | `test_publish_to_non_existing_lane()` | Pass | Confirms publish creates a missing lane, stores the message, and receive reports zero pending after drain. |
 | Explicit lane uses requested capacity | Create lane 21 with capacity 3; fill it; reject overflow; drain it. | `test_create_lane_uses_requested_capacity()` | Pass | Verifies custom capacity, credit, full status, FIFO order, and pending counts. |
 | Duplicate creation preserves lane | Create lane 22 with capacity 2; publish; request the same ID with capacity 5; fill and overflow. | `test_create_lane_does_not_replace_existing_lane()` | Pass | Confirms `LaneExist` and that the original lane capacity and queued state remain intact. |
-| Publish-created lane uses default capacity | Publish to missing lane 23; attempt explicit recreation with a larger capacity; fill to the default and overflow. | `test_publish_created_lane_uses_default_capacity()` | Pass | Confirms lazy publish creation uses `DEFAULT_LANE_CAPACITY` and cannot be resized by `CreateLane()`. |
+| Publish-created lane uses default capacity | Publish to missing lane 23; attempt explicit recreation with a larger capacity; fill to the default and overflow. | `test_publish_created_lane_uses_default_capacity()` | Pass | Confirms lazy publish creation uses `DEFAULT_LANE_CAPACITY` and cannot be resized by `createLane()`. |
+| Zero capacity is rejected | Request capacity 0, then create the same lane ID with capacity 1. | `test_create_lane_rejects_zero_capacity()` | Pass | Confirms `InvalidCapacity` does not reserve or create the lane. |
+| Capacity-one lane works | Fill a one-slot lane, reject overflow, receive, republish, and receive again. | `test_capacity_one_lane()` | Pass | Covers the smallest valid circular buffer and reuse when head and tail coincide. |
+| Custom-capacity FIFO wraps | Fill a capacity-3 FIFO, pop two, push two, and drain in order. | `test_custom_capacity_fifo_wraparound()` | Pass | Verifies modulo arithmetic uses runtime capacity and preserves FIFO order. |
 | Receive lazily creates missing lane | Receive from missing lane 30; receive again; publish; receive. | `test_receive_lazily_creates_missing_lane()` | Pass | Confirms `ReceiveStatus::LazyLaneCreated`, output clearing, zero pending count, and later publish/receive behavior. |
 | Lane credit decreases and recovers | Publish two messages; check credit; receive one; publish again; check credit. | `test_lane_capacity_and_credit()` | Pass | Verifies credit decreases on publish, receive reports pending messages, and freed space allows publish. |
 | Full lane rejects publish and preserves FIFO order | Fill lane to `DEFAULT_LANE_CAPACITY`; attempt overflow publish; receive one; retry publish; drain lane. | `test_lane_full_with_capacity_10()` | Pass | Verifies `PublishStatus::LaneFull`, retry after space is freed, FIFO order after recovery, and receive pending counts. |
@@ -44,9 +47,12 @@ Successful test output includes:
 [PASS] FIFO ordering through bus receive
 [PASS] multiple lanes stay independent
 [PASS] publish lazily creates missing lane
-[PASS] CreateLane uses the requested capacity
-[PASS] CreateLane preserves an existing lane and its capacity
+[PASS] createLane uses the requested capacity
+[PASS] createLane preserves an existing lane and its capacity
 [PASS] publish-created lane uses the default capacity
+[PASS] createLane rejects zero capacity without creating a lane
+[PASS] capacity-one lane supports full receive and reuse
+[PASS] custom-capacity FIFO wraparound preserves order
 [PASS] receive lazily creates missing lane
 [PASS] lane credit decreases after publish and recovers after receive
 [PASS] full lane rejects publish and preserves FIFO order after retry
@@ -83,11 +89,10 @@ Covered:
 - Direct FIFO negative behavior for empty pop, empty front, and overflow.
 - Bus-level negative behavior for rejected publish.
 - Direct FIFO `push_back()`, `pop_front()`, `front()`, `isEmpty()`, `isFull()`,
-  `size()`, and `getCapacity()` behavior.
+  `size()`, and `capacity()` behavior.
 
 Not covered yet:
 
 - Thread safety.
 - IPC.
 - Multi-producer or multi-consumer concurrency.
-- Zero-capacity lane validation.

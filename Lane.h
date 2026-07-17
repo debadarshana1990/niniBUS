@@ -4,16 +4,16 @@
 #include "status.h"
 
 
-#define DEFAULT_LANE_CAPACITY (uint32_t)10 //niniFIFO should holds the default value of the queue capacity not the lane
+#define DEFAULT_LANE_CAPACITY (uint32_t)10 // Default capacity for lazily created lanes.
 
 class lane_t
 {
 
-    // Message structure definition
+    // Bounded message storage for this lane.
     niniFIFO<std::string> content;
     uint32_t getCredit() const
     {
-        return content.getCapacity() - content.size();
+        return content.capacity() - content.size();
     }
     uint32_t getPendingMessage() const
     {
@@ -22,7 +22,7 @@ class lane_t
     
 public:
 
-    lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {} // Initialize the FIFO with the specified capacity
+    explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
 
 
     PublishResult push(const std::string& message);

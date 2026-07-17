@@ -3,7 +3,7 @@
 This file records small implementation lessons learned while building
 `niniBUS`.
 
-Current capacity model: `CreateLane(laneID, capacity)` constructs a lane with a
+Current capacity model: `createLane(laneID, capacity)` constructs a lane with a
 caller-selected FIFO capacity. Lazy creation through `publish()` or `receive()`
 uses `DEFAULT_LANE_CAPACITY`. Several sections below preserve earlier compiler
 errors and intermediate designs for historical context.
@@ -57,7 +57,7 @@ That is why `lane_t` remains default-constructible through a default constructor
 argument:
 
 ```cpp
-lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
+explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
 ```
 
 Without a default constructor, `operator[]` cannot create a missing `lane_t`,
@@ -456,7 +456,7 @@ class lane_t
     niniFIFO<std::string> content;
 
 public:
-    lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
+    explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
 };
 ```
 
@@ -583,7 +583,7 @@ Use one state name consistently:
 ```cpp
 uint32_t currSize;
 
-niniFIFO(uint32_t capacity) : capacity_(capacity), head_(0), tail_(0), currSize_(0)
+explicit niniFIFO(uint32_t capacity) : capacity_(capacity), head_(0), tail_(0), currSize_(0)
 {
     buffer_.resize(capacity_);
 }
@@ -592,7 +592,7 @@ niniFIFO(uint32_t capacity) : capacity_(capacity), head_(0), tail_(0), currSize_
 The current code moved the vector setup into the initializer list:
 
 ```cpp
-niniFIFO(uint32_t capacity)
+explicit niniFIFO(uint32_t capacity)
     : capacity_(capacity),
       buffer_(capacity),
       head_(0),
@@ -649,6 +649,83 @@ different failure style.
 container pattern: read the front element with `front()`, then remove it with
 `pop_front()`.
 
+## Why Single-Argument Constructors Use `explicit`
+
+A constructor that can be called with one argument is also a converting
+constructor unless it is marked `explicit`. A converting constructor allows
+C++ to silently turn the argument into an object of the class.
+
+For example, without `explicit`:
+
+```cpp
+template <typename T>
+class niniFIFO
+{
+public:
+    niniFIFO(uint32_t capacity);
+};
+
+void inspect(niniFIFO<std::string> fifo);
+
+niniFIFO<std::string> first = 10; // Implicitly constructs niniFIFO(10).
+inspect(20);                       // Implicitly passes niniFIFO(20).
+```
+
+Both statements compile even though a FIFO is not conceptually an integer.
+This can hide mistakes at call sites and create temporary objects that the
+reader did not expect.
+
+Marking the constructor `explicit` disables those implicit conversions:
+
+```cpp
+explicit niniFIFO(uint32_t capacity);
+
+niniFIFO<std::string> first = 10; // Compile error.
+inspect(20);                       // Compile error.
+```
+
+Callers must construct the object intentionally:
+
+```cpp
+niniFIFO<std::string> first{10};
+inspect(niniFIFO<std::string>{20});
+```
+
+The same rule applies to `lane_t`:
+
+```cpp
+explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY);
+```
+
+The default argument still allows normal default construction:
+
+```cpp
+lane_t defaultLane;    // Uses DEFAULT_LANE_CAPACITY.
+lane_t smallLane{3};   // Uses capacity 3.
+```
+
+What `explicit` rejects is accidental conversion syntax:
+
+```cpp
+lane_t lane = 3;       // Compile error because conversion is implicit.
+```
+
+It does not break `try_emplace()`:
+
+```cpp
+lane_map_.try_emplace(laneID);           // Directly constructs the default lane.
+lane_map_.try_emplace(laneID, capacity); // Directly constructs lane_t(capacity).
+```
+
+`try_emplace()` constructs `lane_t` directly in the map; it does not ask C++ to
+implicitly convert an integer into a lane. Direct construction is allowed for
+an `explicit` constructor.
+
+The practical guideline is: mark a constructor `explicit` when it can be called
+with one argument unless implicit conversion is a deliberate part of the class
+design. For `niniFIFO` and `lane_t`, capacity is configuration used to construct
+an object, not a value that should automatically behave like that object.
+
 ### Current Successful Build Stages
 
 The current root build now completes these stages:
@@ -666,7 +743,7 @@ rm -f niniBUS.o Lane.o niniBUS.d Lane.d
 so the mapped type must have a usable default constructor.
 
 `try_emplace(laneID, capacity)` forwards `capacity` only when inserting. This is
-why `CreateLane()` can select capacity without replacing an existing lane.
+why `createLane()` can select capacity without replacing an existing lane.
 
 `std::array<T, N>` needs `N` to be known at compile time. Use `std::vector`
 when capacity needs to live in runtime state.

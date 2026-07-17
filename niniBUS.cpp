@@ -1,12 +1,14 @@
 #include "niniBUS.h"
 
-// Define static member
-CreateLaneStatus niniBUS::CreateLane(laneID_t laneID,uint32_t capacity)
+CreateLaneStatus niniBUS::createLane(laneID_t laneID, uint32_t capacity)
 {
-    auto[it,inserted] = lane_map_.try_emplace(laneID, capacity);
-    if(inserted)
-        return CreateLaneStatus::ok;
-    return CreateLaneStatus::LaneExist;
+    if (capacity == 0)
+    {
+        return CreateLaneStatus::InvalidCapacity;
+    }
+
+    auto [it, inserted] = lane_map_.try_emplace(laneID, capacity);
+    return inserted ? CreateLaneStatus::Ok : CreateLaneStatus::LaneExists;
 }
 
 PublishResult niniBUS::publish(laneID_t laneID, const std::string& message)

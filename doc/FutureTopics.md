@@ -90,7 +90,7 @@ struct PublishResult {
 Questions:
 
 - Should an existing lane be resizable, or should capacity remain immutable
-  after `CreateLane()`?
+  after `createLane()`?
 - Should full lanes reject new messages, drop old messages, or use a
   configurable policy?
 - Should `LaneFull` remain simple, or should it carry richer back-pressure

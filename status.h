@@ -23,7 +23,7 @@ struct ReceiveResult
 
 enum class CreateLaneStatus
 {
-    ok,
-    LaneExist,
-    not_ok
+    Ok,
+    LaneExists,
+    InvalidCapacity
 };

@@ -36,19 +36,19 @@ struct ReceiveResult {
 };
 
 enum class CreateLaneStatus {
-    ok,
-    LaneExist,
-    not_ok
+    Ok,
+    LaneExists,
+    InvalidCapacity
 };
 
 PublishResult publish(laneID_t laneID, const std::string& message);
 ReceiveResult receive(laneID_t laneID, std::string& message);
-CreateLaneStatus CreateLane(laneID_t laneID, uint32_t capacity);
+CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
 ```
 
 ## How It Works
 
-- `CreateLane()` explicitly creates a lane with a caller-selected capacity.
+- `createLane()` explicitly creates a lane with a caller-selected capacity.
 - A lane is also created lazily with `DEFAULT_LANE_CAPACITY` when it is first
   published to or received from.
 - Each lane stores messages in `niniFIFO<std::string>`.
@@ -83,12 +83,14 @@ messages. A received message is removed and cannot be received again.
 
 ## Explicit Lane Creation
 
-`CreateLane(laneID, capacity)` creates an empty lane with the requested buffer
+`createLane(laneID, capacity)` creates an empty lane with the requested buffer
 capacity:
 
-- `CreateLaneStatus::ok` means the lane was created.
-- `CreateLaneStatus::LaneExist` means the ID was already registered. The
+- `CreateLaneStatus::Ok` means the lane was created.
+- `CreateLaneStatus::LaneExists` means the ID was already registered. The
   existing lane, queued messages, and capacity are preserved.
+- `CreateLaneStatus::InvalidCapacity` means capacity was zero and no lane was
+  created. The smallest valid capacity is one.
 - Publishing to an unknown lane remains valid and creates it with
   `DEFAULT_LANE_CAPACITY`.
 
@@ -216,8 +218,8 @@ make clean
 
 - The bus is not thread-safe.
 - There is no `subscribe()` API; lanes can be created explicitly with
-  `CreateLane()` or lazily by `publish()` and `receive()`.
-- Capacity is fixed for the lifetime of a lane. Calling `CreateLane()` for an
+  `createLane()` or lazily by `publish()` and `receive()`.
+- Capacity is fixed for the lifetime of a lane. Calling `createLane()` for an
   existing ID does not resize or replace it.
 - Lane queue internals are private; callers interact through the bus API rather
   than directly mutating lane queues.

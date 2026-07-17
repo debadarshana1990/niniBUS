@@ -87,7 +87,7 @@ void test_create_lane_uses_requested_capacity()
     std::string message;
     constexpr uint32_t capacity = 3;
 
-    assert(bus.CreateLane(21, capacity) == CreateLaneStatus::ok);
+    assert(bus.createLane(21, capacity) == CreateLaneStatus::Ok);
 
     for (uint32_t i = 0; i < capacity; ++i)
     {
@@ -106,17 +106,17 @@ void test_create_lane_uses_requested_capacity()
         assert(message == "custom-" + std::to_string(i));
     }
 
-    print_pass("CreateLane uses the requested capacity");
+    print_pass("createLane uses the requested capacity");
 }
 
 void test_create_lane_does_not_replace_existing_lane()
 {
     niniBUS bus;
 
-    assert(bus.CreateLane(22, 2) == CreateLaneStatus::ok);
+    assert(bus.createLane(22, 2) == CreateLaneStatus::Ok);
     assert(bus.publish(22, "first").Credit == 1);
 
-    assert(bus.CreateLane(22, 5) == CreateLaneStatus::LaneExist);
+    assert(bus.createLane(22, 5) == CreateLaneStatus::LaneExists);
 
     PublishResult second = bus.publish(22, "second");
     assert(second.Status == PublishStatus::Ok);
@@ -126,7 +126,7 @@ void test_create_lane_does_not_replace_existing_lane()
     assert(overflow.Status == PublishStatus::LaneFull);
     assert(overflow.Credit == 0);
 
-    print_pass("CreateLane preserves an existing lane and its capacity");
+    print_pass("createLane preserves an existing lane and its capacity");
 }
 
 void test_publish_created_lane_uses_default_capacity()
@@ -137,7 +137,7 @@ void test_publish_created_lane_uses_default_capacity()
     assert(first.Status == PublishStatus::Ok);
     assert(first.Credit == DEFAULT_LANE_CAPACITY - 1);
 
-    assert(bus.CreateLane(23, DEFAULT_LANE_CAPACITY + 5) == CreateLaneStatus::LaneExist);
+    assert(bus.createLane(23, DEFAULT_LANE_CAPACITY + 5) == CreateLaneStatus::LaneExists);
 
     for (uint32_t i = 1; i < DEFAULT_LANE_CAPACITY; ++i)
     {
@@ -151,6 +151,74 @@ void test_publish_created_lane_uses_default_capacity()
     assert(overflow.Credit == 0);
 
     print_pass("publish-created lane uses the default capacity");
+}
+
+void test_create_lane_rejects_zero_capacity()
+{
+    niniBUS bus;
+
+    assert(bus.createLane(24, 0) == CreateLaneStatus::InvalidCapacity);
+
+    // A rejected creation must not reserve the lane ID.
+    assert(bus.createLane(24, 1) == CreateLaneStatus::Ok);
+
+    print_pass("createLane rejects zero capacity without creating a lane");
+}
+
+void test_capacity_one_lane()
+{
+    niniBUS bus;
+    std::string message;
+
+    assert(bus.createLane(25, 1) == CreateLaneStatus::Ok);
+
+    PublishResult first = bus.publish(25, "one");
+    assert(first.Status == PublishStatus::Ok);
+    assert(first.Credit == 0);
+
+    PublishResult full = bus.publish(25, "two");
+    assert(full.Status == PublishStatus::LaneFull);
+    assert(full.Credit == 0);
+
+    receive_and_expect(bus, 25, message, ReceiveStatus::Ok, 0);
+    assert(message == "one");
+
+    PublishResult retry = bus.publish(25, "two");
+    assert(retry.Status == PublishStatus::Ok);
+    assert(retry.Credit == 0);
+
+    receive_and_expect(bus, 25, message, ReceiveStatus::Ok, 0);
+    assert(message == "two");
+
+    print_pass("capacity-one lane supports full receive and reuse");
+}
+
+void test_custom_capacity_fifo_wraparound()
+{
+    niniFIFO<std::string> fifo(3);
+
+    assert(fifo.push_back("A") == FIFOStatus::SUCCESS);
+    assert(fifo.push_back("B") == FIFOStatus::SUCCESS);
+    assert(fifo.push_back("C") == FIFOStatus::SUCCESS);
+
+    assert(fifo.front() == "A");
+    assert(fifo.pop_front() == FIFOStatus::SUCCESS);
+    assert(fifo.front() == "B");
+    assert(fifo.pop_front() == FIFOStatus::SUCCESS);
+
+    assert(fifo.push_back("D") == FIFOStatus::SUCCESS);
+    assert(fifo.push_back("E") == FIFOStatus::SUCCESS);
+    assert(fifo.isFull());
+
+    for (const std::string& expected : {"C", "D", "E"})
+    {
+        assert(fifo.front() == expected);
+        assert(fifo.pop_front() == FIFOStatus::SUCCESS);
+    }
+
+    assert(fifo.isEmpty());
+
+    print_pass("custom-capacity FIFO wraparound preserves order");
 }
 
 void test_receive_lazily_creates_missing_lane()
@@ -295,7 +363,7 @@ void test_direct_fifo_push_pop_front_status()
     assert(fifo.isEmpty());
     assert(!fifo.isFull());
     assert(fifo.size() == 0);
-    assert(fifo.getCapacity() == DEFAULT_LANE_CAPACITY);
+    assert(fifo.capacity() == DEFAULT_LANE_CAPACITY);
     assert(fifo.pop_front() == FIFOStatus::EMPTY);
 
     assert(fifo.push_back("first") == FIFOStatus::SUCCESS);
@@ -450,6 +518,9 @@ int main()
     test_create_lane_uses_requested_capacity();
     test_create_lane_does_not_replace_existing_lane();
     test_publish_created_lane_uses_default_capacity();
+    test_create_lane_rejects_zero_capacity();
+    test_capacity_one_lane();
+    test_custom_capacity_fifo_wraparound();
     test_receive_lazily_creates_missing_lane();
     test_lane_capacity_and_credit();
     test_lane_full_with_capacity_10();
