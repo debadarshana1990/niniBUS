@@ -57,7 +57,7 @@ That is why `lane_t` remains default-constructible through a default constructor
 argument:
 
 ```cpp
-explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
+explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content_(capacity) {}
 ```
 
 Without a default constructor, `operator[]` cannot create a missing `lane_t`,
@@ -453,10 +453,10 @@ with a default capacity argument:
 ```cpp
 class lane_t
 {
-    niniFIFO<std::string> content;
+    niniFIFO<std::string> content_;
 
 public:
-    explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
+    explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content_(capacity) {}
 };
 ```
 
@@ -497,7 +497,7 @@ class niniFIFO_t
 That made `lane_t` choose the capacity at compile time:
 
 ```cpp
-niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY> content;
+niniFIFO_t<std::string, DEFAULT_LANE_CAPACITY> content_;
 ```
 
 That version compiled further, but it made capacity part of the type. The
@@ -516,7 +516,7 @@ class niniFIFO
     uint32_t capacity_;
     uint32_t head_;
     uint32_t tail_;
-    uint32_t currSize_;
+    uint32_t size_;
 };
 ```
 
@@ -583,7 +583,7 @@ Use one state name consistently:
 ```cpp
 uint32_t currSize;
 
-explicit niniFIFO(uint32_t capacity) : capacity_(capacity), head_(0), tail_(0), currSize_(0)
+explicit niniFIFO(uint32_t capacity) : capacity_(capacity), head_(0), tail_(0), size_(0)
 {
     buffer_.resize(capacity_);
 }
@@ -597,7 +597,7 @@ explicit niniFIFO(uint32_t capacity)
       buffer_(capacity),
       head_(0),
       tail_(0),
-      currSize_(0)
+      size_(0)
 {
 }
 ```

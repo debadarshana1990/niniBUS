@@ -10,19 +10,19 @@ class lane_t
 {
 
     // Bounded message storage for this lane.
-    niniFIFO<std::string> content;
-    uint32_t getCredit() const
+    niniFIFO<std::string> content_;
+    uint32_t credit() const
     {
-        return content.capacity() - content.size();
+        return content_.capacity() - content_.size();
     }
     uint32_t getPendingMessage() const
     {
-        return content.size();
+        return content_.size();
     }
     
 public:
 
-    explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
+    explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content_(capacity) {}
 
 
     PublishResult push(const std::string& message);

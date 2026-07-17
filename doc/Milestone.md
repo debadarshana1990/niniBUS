@@ -80,13 +80,13 @@ Replace the lane's direct STL queue usage with a project-owned circular FIFO.
 
 - Add `niniFIFO<T>`.
 - Use `std::vector<T>` as internal storage.
-- Maintain `head_`, `tail_`, `currSize_`, and `capacity_`.
+- Maintain `head_`, `tail_`, `size_`, and `capacity_`.
 - Implement STL-like APIs:
   - `push_back()`
   - `pop_front()`
   - `front()`
-  - `isEmpty()`
-  - `isFull()`
+  - `empty()`
+  - `full()`
   - `size()`
   - `capacity()`
 - Add `FIFOStatus`:

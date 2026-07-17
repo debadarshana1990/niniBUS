@@ -208,7 +208,7 @@ void test_custom_capacity_fifo_wraparound()
 
     assert(fifo.push_back("D") == FIFOStatus::SUCCESS);
     assert(fifo.push_back("E") == FIFOStatus::SUCCESS);
-    assert(fifo.isFull());
+    assert(fifo.full());
 
     for (const std::string& expected : {"C", "D", "E"})
     {
@@ -216,7 +216,7 @@ void test_custom_capacity_fifo_wraparound()
         assert(fifo.pop_front() == FIFOStatus::SUCCESS);
     }
 
-    assert(fifo.isEmpty());
+    assert(fifo.empty());
 
     print_pass("custom-capacity FIFO wraparound preserves order");
 }
@@ -360,8 +360,8 @@ void test_direct_fifo_push_pop_front_status()
 {
     niniFIFO<std::string> fifo(DEFAULT_LANE_CAPACITY);
 
-    assert(fifo.isEmpty());
-    assert(!fifo.isFull());
+    assert(fifo.empty());
+    assert(!fifo.full());
     assert(fifo.size() == 0);
     assert(fifo.capacity() == DEFAULT_LANE_CAPACITY);
     assert(fifo.pop_front() == FIFOStatus::EMPTY);
@@ -375,7 +375,7 @@ void test_direct_fifo_push_pop_front_status()
     assert(fifo.front() == "second");
     assert(fifo.pop_front() == FIFOStatus::SUCCESS);
     assert(fifo.pop_front() == FIFOStatus::EMPTY);
-    assert(fifo.isEmpty());
+    assert(fifo.empty());
 
     print_pass("direct FIFO push_back pop_front and front behavior");
 }
@@ -389,7 +389,7 @@ void test_direct_fifo_full_status()
         assert(fifo.push_back("item-" + std::to_string(i)) == FIFOStatus::SUCCESS);
     }
 
-    assert(fifo.isFull());
+    assert(fifo.full());
     assert(fifo.size() == DEFAULT_LANE_CAPACITY);
     assert(fifo.push_back("overflow") == FIFOStatus::FULL);
     assert(fifo.size() == DEFAULT_LANE_CAPACITY);
@@ -429,7 +429,7 @@ void test_fifo_wraparound()
         assert(fifo.pop_front() == FIFOStatus::SUCCESS);
     }
 
-    assert(fifo.isEmpty());
+    assert(fifo.empty());
 
     print_pass("direct FIFO wraparound preserves order");
 }
@@ -441,7 +441,7 @@ void test_fifo_empty_negative_paths()
 
     assert(fifo.pop_front() == FIFOStatus::EMPTY);
     assert(fifo.pop_front() == FIFOStatus::EMPTY);
-    assert(fifo.isEmpty());
+    assert(fifo.empty());
 
     try
     {
@@ -476,7 +476,7 @@ void test_fifo_overflow_does_not_corrupt_order()
         assert(fifo.pop_front() == FIFOStatus::SUCCESS);
     }
 
-    assert(fifo.isEmpty());
+    assert(fifo.empty());
 
     print_pass("direct FIFO overflow does not corrupt queued data");
 }

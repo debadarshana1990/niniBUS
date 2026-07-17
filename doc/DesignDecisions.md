@@ -263,7 +263,7 @@ std::unordered_map<laneID_t, lane_t> lane_map_;
 
 **Status**: accepted
 
-**Decision**: `lane_t` keeps `content` and credit calculation private. It
+**Decision**: `lane_t` keeps `content_` and credit calculation private. It
 exposes push/pop behavior instead of allowing direct mutation or bus-side queue
 inspection.
 
@@ -277,7 +277,7 @@ ReceiveResult pop(std::string& message);
 Current private lane helper:
 
 ```cpp
-uint32_t getCredit() const;
+uint32_t credit() const;
 ```
 
 **Rationale**:
@@ -293,7 +293,7 @@ uint32_t getCredit() const;
 
 - `niniBUS` uses `push()` and `pop()` instead of mutating the lane queue
   directly.
-- `getCredit()` is a private helper.
+- `credit()` is a private helper.
 - Queue implementation details are less exposed.
 - Future bounded FIFO or custom queue work can start inside `lane_t`.
 
@@ -557,7 +557,7 @@ struct PublishResult {
 **Current scope**:
 
 - Credit is returned after `publish()`.
-- Credit is derived from `capacity - content.size()`.
+- Credit is derived from `capacity - content_.size()`.
 - A lane created by `createLane()` uses the requested capacity. A lane created
   lazily uses `DEFAULT_LANE_CAPACITY`. The FIFO stores the selected value in
   its runtime `capacity_` member.
@@ -780,7 +780,7 @@ members.
 **Decision**: each `lane_t` stores messages in:
 
 ```cpp
-niniFIFO<std::string> content;
+niniFIFO<std::string> content_;
 ```
 
 `niniFIFO` is a circular FIFO backed by `std::vector<T>`. Its constructor takes

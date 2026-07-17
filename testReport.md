@@ -32,7 +32,7 @@ assertion stops the program.
 | Full lane rejects publish and preserves FIFO order | Fill lane to `DEFAULT_LANE_CAPACITY`; attempt overflow publish; receive one; retry publish; drain lane. | `test_lane_full_with_capacity_10()` | Pass | Verifies `PublishStatus::LaneFull`, retry after space is freed, FIFO order after recovery, and receive pending counts. |
 | Receive clears output before empty pop | Receive a real message; set output to stale data; receive from empty lane. | `test_receive_clears_output_on_empty_lane()` | Pass | Confirms empty receive clears old output data and returns `ReceiveStatus::LaneEmpty` with zero pending messages. |
 | Receive reports pending message count | Publish four messages; receive each message; check pending counts from 3 to 0; receive once more from empty lane. | `test_receive_reports_pending_messages()` | Pass | Confirms `ReceiveResult::PendingMessages` is measured after a successful pop. |
-| Direct FIFO push, pop, and front behavior | Create FIFO; check empty state; pop empty; push two; inspect `front()`; pop until empty. | `test_direct_fifo_push_pop_front_status()` | Pass | Covers direct `niniFIFO` `push_back()`, `pop_front()`, `front()`, `isEmpty()`, `size()`, and status behavior. |
+| Direct FIFO push, pop, and front behavior | Create FIFO; check empty state; pop empty; push two; inspect `front()`; pop until empty. | `test_direct_fifo_push_pop_front_status()` | Pass | Covers direct `niniFIFO` `push_back()`, `pop_front()`, `front()`, `empty()`, `size()`, and status behavior. |
 | Direct FIFO full status | Push `DEFAULT_LANE_CAPACITY` items; check full state; attempt overflow push. | `test_direct_fifo_full_status()` | Pass | Confirms `FIFOStatus::FULL` and that failed overflow does not increase size. |
 | Direct FIFO wraparound | Fill FIFO with `A0`-`A9`; pop five; push `B0`-`B4`; drain remaining `A` values; drain wrapped `B` values. | `test_fifo_wraparound()` | Pass | Proves tail wrap, head wrap, order preservation across wraparound, and queue reuse. |
 | Direct FIFO empty negative paths | Pop from empty FIFO twice; call `front()` on empty FIFO and catch `std::runtime_error`. | `test_fifo_empty_negative_paths()` | Pass | Confirms empty pop returns `FIFOStatus::EMPTY` repeatedly and empty `front()` throws. |
@@ -88,7 +88,7 @@ Covered:
 - Direct FIFO wraparound of both head and tail indexes.
 - Direct FIFO negative behavior for empty pop, empty front, and overflow.
 - Bus-level negative behavior for rejected publish.
-- Direct FIFO `push_back()`, `pop_front()`, `front()`, `isEmpty()`, `isFull()`,
+- Direct FIFO `push_back()`, `pop_front()`, `front()`, `empty()`, `full()`,
   `size()`, and `capacity()` behavior.
 
 Not covered yet:

@@ -71,7 +71,7 @@ inside the bus map.
 
 Private fields:
 
-- `content`: a `niniFIFO<std::string>` containing pending messages.
+- `content_`: a `niniFIFO<std::string>` containing pending messages.
 
 `lane_t` does not store its own lane ID. The lane ID is already the key in
 `niniBUS::lane_map_`, so storing the same value inside every lane object would
@@ -88,16 +88,16 @@ Public functions today:
 
 Private helper functions:
 
-- `getCredit()`: return remaining queue capacity.
+- `credit()`: return remaining queue capacity.
 - `getPendingMessage()`: return currently queued messages.
 
 The queue data and credit helper are private. `niniBUS` does not inspect lane
 size or capacity directly; it delegates to `lane_t::push()` and `lane_t::pop()`.
 
-`lane_t::getCredit()` returns remaining queue capacity:
+`lane_t::credit()` returns remaining queue capacity:
 
 ```cpp
-content.capacity() - content.size()
+content_.capacity() - content_.size()
 ```
 
 ### `niniFIFO`
@@ -115,7 +115,7 @@ Current FIFO state:
 - `capacity_`: capacity supplied to the FIFO constructor.
 - `head_`: index of the oldest element.
 - `tail_`: index where the next element will be written.
-- `currSize_`: number of currently queued elements.
+- `size_`: number of currently queued elements.
 
 Current FIFO operations:
 
@@ -124,7 +124,7 @@ Current FIFO operations:
 - `pop_front()`: remove the oldest element, returning `FIFOStatus`.
 - `front()`: return the oldest element, following the STL-style naming used by
   queue-like containers.
-- `isEmpty()`, `isFull()`, `size()`, and `capacity()`: inspect FIFO state.
+- `empty()`, `full()`, `size()`, and `capacity()`: inspect FIFO state.
 
 `std::vector` is used instead of `std::array` because both provide contiguous
 storage, but `vector` can support runtime capacity and future growth. The
@@ -286,7 +286,7 @@ The current implementation has no synchronization.
 Concurrent calls to `publish()` or `receive()` can race on:
 
 - `lane_map_`
-- each lane's private `content` FIFO
+- each lane's private `content_` FIFO
 
 Treat the bus as single-threaded unless a mutex or another synchronization
 strategy is added.

@@ -19,42 +19,44 @@ class niniFIFO
         std::vector<T> buffer_;
         uint32_t head_;
         uint32_t tail_;
-        uint32_t currSize_;
+        uint32_t size_;
     public:
     //public API
-    explicit niniFIFO(uint32_t capacity) : capacity_(capacity), buffer_(capacity), head_(0), tail_(0), currSize_(0)
+    // Precondition: capacity > 0.
+    // niniBUS::createLane() validates application-provided capacity.
+    explicit niniFIFO(uint32_t capacity) : capacity_(capacity), buffer_(capacity), head_(0), tail_(0), size_(0)
     {
     }
 
     FIFOStatus push_back(const T& message)
     {
-        if(isFull())
+        if(full())
             return FIFOStatus::FULL;
         buffer_[tail_] = message;
         tail_ = (tail_ + 1) % capacity_;
-        currSize_++;
+        size_++;
         return FIFOStatus::SUCCESS;
     }
 
     FIFOStatus pop_front()
     {
-        if(isEmpty())
+        if(empty())
             return FIFOStatus::EMPTY;
         head_ = (head_ + 1) % capacity_;
-        currSize_--;
+        size_--;
         return FIFOStatus::SUCCESS;
     }
     
     T& front()
     {
-        if (isEmpty())
+        if (empty())
             throw std::runtime_error("FIFO is empty");
         return buffer_[head_];
     }
     
     //helper functions
-    bool isEmpty() const {return (currSize_ == 0);}
-    bool isFull() const {return (currSize_ == capacity_);}
-    uint32_t size() const {return currSize_;}
+    bool empty() const {return (size_ == 0);}
+    bool full() const {return (size_ == capacity_);}
+    uint32_t size() const {return size_;}
     uint32_t capacity() const { return capacity_; }
 };
