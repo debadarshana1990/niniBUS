@@ -1,61 +1,35 @@
 #include "niniBUS.h"
 
-// Define static member
-
-PublishResult niniBUS::publish(lane_t laneID, std::string message)
+CreateLaneStatus niniBUS::createLane(laneID_t laneID, uint32_t capacity)
 {
-    ///check if present in the map
-    auto it = lane_map_.find(laneID);
-    if(it != lane_map_.end())
+    if (capacity == 0)
     {
-        // Lane exists, push message directly to the map entry
-        lane_map_[laneID].content.push_back(message);
-        return PublishResult::Ok;
-    }
-    //if its not present need to create the object and push the message
-    Lane newLane(laneID);
-    lane_map_[laneID] = newLane;
-    lane_map_[laneID].content.push_back(message);
-    return PublishResult::Ok;
-}
-/* subscribe*/
-bool niniBUS::subscribe(lane_t laneID)
-{
-    // Check if the lane ID exists
-    auto it = lane_map_.find(laneID);
-    if (it == lane_map_.end())
-    {
-        Lane newLane(laneID);
-        lane_map_[laneID] = newLane;
+        return CreateLaneStatus::InvalidCapacity;
     }
 
-    return true;
+    auto [it, inserted] = lane_map_.try_emplace(laneID, capacity);
+    return inserted ? CreateLaneStatus::Ok : CreateLaneStatus::LaneExists;
 }
 
-/* pull message is interesting */
-ReceiveResult niniBUS::receive(lane_t laneID, std::string& message)
+PublishResult niniBUS::publish(laneID_t laneID, const std::string& message)
+{
+    // Check if lane exists, if not create it 
+    auto [it, _] = lane_map_.try_emplace(laneID);
+
+    return it->second.push(message);
+}
+
+ReceiveResult niniBUS::receive(laneID_t laneID, std::string& message)
 {
     message.clear();
     //check if the laneID is present
-    auto it = lane_map_.find(laneID);
-    if (it == lane_map_.end())
+    auto [it, inserted] = lane_map_.try_emplace(laneID);
+    if(inserted)
     {
-        std::cerr << "Lane ID not found. Subscribing for future messages." << std::endl;
-        subscribe(laneID);
-        return ReceiveResult::LazyLaneCreated;
+        return { 0,ReceiveStatus::LazyLaneCreated };
     }
 
     // Get reference to the lane in the map and check if it has content
-    Lane& laneObj = it->second;
-    if (laneObj.content.empty())
-    {
-        std::cerr << "No content available for lane ID " << laneID << std::endl;
-        return ReceiveResult::LaneEmpty;
-    }
-
-    // Pull the latest content
-    message = laneObj.content.front();
-    laneObj.content.pop_front();
-
-    return ReceiveResult::Ok;
+    lane_t& laneObj = it->second;
+    return laneObj.pop(message);
 }

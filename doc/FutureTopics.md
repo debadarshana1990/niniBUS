@@ -31,15 +31,19 @@ Before moving a topic from this document into a milestone:
 These ideas improve the current single-threaded design without adding
 multi-threading or IPC.
 
-### Custom FIFO
+### FIFO Evolution
 
-Idea: replace or wrap `std::deque<std::string>` with a project-owned FIFO
-abstraction.
+Current state: V1 now uses a project-owned FIFO:
+
+```cpp
+niniFIFO<std::string>
+```
+
+This section now tracks possible future FIFO improvements rather than the
+initial replacement of `std::deque`.
 
 Topics:
 
-- Circular buffer.
-- Fixed capacity.
 - Optional dynamic capacity.
 - Queue statistics.
 - Configurable queue size.
@@ -47,15 +51,15 @@ Topics:
 
 Questions:
 
-- Is `std::deque` insufficient for current goals?
 - Should capacity be per lane or global?
-- Should queue capacity be compile-time or runtime configuration?
-- Does a custom FIFO improve clarity, or only add maintenance cost?
+- Should queue capacity be exposed through public runtime configuration?
+- Should capacity be mutable after FIFO/lane construction?
+- Should FIFO errors use return statuses, exceptions, or both?
 
 Promotion trigger:
 
-- Move to V1 only after the current `std::deque` behavior is tested and a real
-  capacity/statistics need is identified.
+- Move to a future milestone when runtime capacity, richer statistics, or a
+  different overflow policy becomes a real requirement.
 
 ### Back Pressure
 
@@ -72,24 +76,31 @@ Possible policies:
 Possible API:
 
 ```cpp
-enum class PublishResult {
+enum class PublishStatus {
     Ok,
-    LaneFull,
-    LaneNotFound
+    LaneFull
+};
+
+struct PublishResult {
+    uint32_t Credit;
+    PublishStatus Status;
 };
 ```
 
 Questions:
 
-- What does "full" mean for an unbounded `std::deque`?
-- Should V1 introduce bounded queues first?
-- Should `LaneFull` remain in the API before the condition is implemented?
+- Should an existing lane be resizable, or should capacity remain immutable
+  after `createLane()`?
+- Should full lanes reject new messages, drop old messages, or use a
+  configurable policy?
+- Should `LaneFull` remain simple, or should it carry richer back-pressure
+  information?
 - Should dropped-message counts be tracked?
 
 Promotion trigger:
 
-- Move to V1 when bounded queues are added or when slow consumers become a real
-  use case.
+- Move to V1 when the current `LaneFull` behavior is not enough or when slow
+  consumers become a real use case.
 
 ### Lane Statistics
 
@@ -126,9 +137,10 @@ Idea: measure before changing data structures.
 
 Measurements:
 
-- Size of `Lane`.
-- Size and overhead of `std::unordered_map<uint32_t, Lane>`.
-- Per-message allocation behavior.
+- Size of `lane_t`.
+- Size of `niniFIFO<std::string>`.
+- Size and overhead of `std::unordered_map<laneID_t, lane_t>`.
+- Per-message allocation behavior from `std::string`.
 - Per-lane allocation behavior.
 - Allocation count during publish/receive.
 
@@ -147,7 +159,7 @@ Promotion trigger:
 
 Ideas to compare:
 
-- `std::unordered_map<uint32_t, Lane>`.
+- `std::unordered_map<laneID_t, lane_t>`.
 - Sorted vector of lanes.
 - Fixed-size lane table.
 - Open-addressed static hash table.
