@@ -317,7 +317,65 @@ At the end of V1, `niniBUS` has:
 Can I make the single-threaded bus bounded, predictable, reusable, and fully
 tested?
 
-## V2 - Thread-Safe Message Bus
+## V2 - Competing Messages / Broadcast
+
+### Objective
+
+Support multiple subscribers per lane with message competition or broadcast modes.
+
+### Features
+
+- Multi-subscriber support per lane.
+- Competing message model (one subscriber gets the message).
+- Broadcast message model (all subscribers get the message).
+- Lane subscription management.
+- Subscriber lifecycle.
+- Message distribution strategy.
+- Backpressure with multiple subscribers.
+
+### V2.1 - Design Exploration
+
+Status: not started.
+
+### Objective
+
+Explore design patterns for multi-subscriber message delivery.
+
+### Questions
+
+- Competing vs broadcast - which modes?
+- Per-lane or per-subscriber buffers?
+- How to handle backpressure from slow subscribers?
+- Subscriber identification.
+- Subscription/unsubscription mechanism.
+- Message ownership and lifetime.
+- Resource management with multiple subscribers.
+
+### V2.2 - TBD
+
+Status: not started.
+
+### Objective
+
+Complete design decisions from V2.1 exploration.
+
+### Tasks
+
+- [ ] Decide on multi-subscriber modes
+- [ ] Design subscriber interface
+- [ ] Design buffer strategy
+- [ ] Design backpressure handling
+- [ ] Define API
+
+### Definition Of Done
+
+- Multi-subscriber design is complete and documented.
+
+### Engineering Question
+
+Can `niniBUS` support multiple subscribers with predictable message delivery?
+
+## V3 - Thread-Safe Message Bus
 
 ### Objective
 
@@ -369,7 +427,7 @@ Support safe concurrent publishing and receiving.
 
 Can multiple threads use `niniBUS` safely?
 
-## V3 - Lock-Free FIFO Research
+## V4 - Lock-Free FIFO Research
 
 ### Objective
 
@@ -415,13 +473,13 @@ performs better for a measured workload.
 
 Can locks be removed without sacrificing correctness or maintainability?
 
-## V4 - Storage and Memory Management
+## V5 - Storage and Memory Management
 
 ### Objective
 
 Separate FIFO behavior from memory ownership and make memory use predictable.
 
-### V4.0 - `niniStorage`
+### V5.0 - `niniStorage`
 
 ### Features
 
@@ -436,7 +494,7 @@ Separate FIFO behavior from memory ownership and make memory use predictable.
 
 FIFO should know how to manage queue state, not where the memory comes from.
 
-### V4.1 - `niniAllocator`
+### V5.1 - `niniAllocator`
 
 ### Features
 
