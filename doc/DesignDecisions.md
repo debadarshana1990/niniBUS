@@ -125,12 +125,12 @@ communication path. Applications assign meaning to lane IDs.
 
 **Status**: current
 
-**Decision**: expose two core operations with explicit publish and receive
-status reporting:
+**Decision**: expose publish, receive, and explicit lane creation:
 
 ```cpp
 PublishResult publish(laneID_t laneID, const std::string& message);
-ReceiveStatus receive(laneID_t laneID, std::string& message);
+ReceiveResult receive(laneID_t laneID, std::string& message);
+CreateLaneStatus CreateLane(laneID_t laneID, uint32_t capacity);
 ```
 
 **Rationale**:
@@ -138,8 +138,10 @@ ReceiveStatus receive(laneID_t laneID, std::string& message);
 - `publish()` is the familiar operation for adding data to a bus, and now
   returns both publish status and remaining lane credit.
 - `receive()` clearly communicates destructive FIFO consumption and returns a
-  `ReceiveStatus` so callers can distinguish success, empty lane, and lazy lane
-  creation.
+  `ReceiveResult` so callers can distinguish success, empty lane, lazy lane
+  creation, and pending messages after a successful pop.
+- `CreateLane()` supports applications that need a known per-lane capacity
+  before the first message is published.
 - A separate `subscribe()` function is not required right now because
   `receive()` already lazily creates missing lanes.
 - Removing `subscribe()` avoids an API that only duplicates lane creation
@@ -151,6 +153,8 @@ ReceiveStatus receive(laneID_t laneID, std::string& message);
 - Publishers can react to `PublishStatus::LaneFull`.
 - Publishers can read `PublishResult::Credit` without separately querying lane
   internals.
+- Receivers can read `ReceiveResult::PendingMessages` without separately
+  querying lane internals.
 - There is no subscription registry, callback registration, or subscriber
   identity tracking in the current API.
 
@@ -158,7 +162,7 @@ ReceiveStatus receive(laneID_t laneID, std::string& message);
 
 - Receiver tracking is added.
 - Callback subscriptions are introduced.
-- Applications need explicit lane registration separate from publish/receive.
+- Lane creation needs richer metadata or resize semantics.
 
 ## DD-006 - Store Lanes By Value
 
@@ -253,7 +257,7 @@ std::unordered_map<laneID_t, lane_t> lane_map_;
 - Lanes need self-describing metadata independent of the map.
 - Lane objects are moved outside `niniBUS::lane_map_`.
 - The bus adds named lanes or richer lane descriptors.
-- lane creation paths need capacity configuration.
+- Lane capacity must change after creation.
 
 ## DD-008 - Hide Lane Queue Internals
 
@@ -267,7 +271,7 @@ Current public lane operations:
 
 ```cpp
 PublishResult push(const std::string& message);
-ReceiveStatus pop(std::string& message);
+ReceiveResult pop(std::string& message);
 ```
 
 Current private lane helper:
@@ -360,12 +364,13 @@ find or create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
 
 **Status**: accepted
 
-**Decision**: create lanes lazily when they are first published to or received
-from.
+**Decision**: keep lazy lane creation when lanes are first published to or
+received from, while also allowing explicit creation through `CreateLane()`.
 
 **Rationale**:
 
 - Callers do not need a separate setup phase.
+- Callers that need a custom capacity can create the lane explicitly.
 - Publishing to a new lane works immediately.
 - Receiving from a missing lane prepares the lane for future messages.
 - `receive()` uses `try_emplace(laneID)` so the returned `inserted` flag tells
@@ -374,7 +379,7 @@ from.
 **Consequences**:
 
 - Missing-lane receive normally returns `ReceiveStatus::LazyLaneCreated`.
-- Applications that want strict lane registration need extra policy later.
+- Lazy lanes use `DEFAULT_LANE_CAPACITY`.
 - The old `find()` plus separate creation path is avoided.
 
 **Revisit when**:
@@ -386,8 +391,8 @@ from.
 
 **Status**: current
 
-**Decision**: `publish()` returns a result struct containing status and credit,
-while `receive()` returns an enum status.
+**Decision**: `publish()` and `receive()` return result structs containing a
+status plus operation-specific queue state.
 
 ```cpp
 enum class PublishStatus {
@@ -405,6 +410,11 @@ enum class ReceiveStatus {
     LaneEmpty,
     LazyLaneCreated
 };
+
+struct ReceiveResult {
+    uint32_t PendingMessages;
+    ReceiveStatus Status;
+};
 ```
 
 **Rationale**:
@@ -412,12 +422,16 @@ enum class ReceiveStatus {
 - Explicit statuses describe outcomes better than plain `bool`.
 - `publish()` needs to report both success/failure status and remaining lane
   credit.
+- `receive()` needs to report both receive status and the number of messages
+  still pending after a successful pop.
 - `receive()` can distinguish success, empty lane, and lazy lane creation.
 - Bounded lanes use `PublishStatus::LaneFull`.
 
 **Consequences**:
 
 - Callers should check the result before using output data.
+- `PublishResult::Credit` describes remaining write capacity.
+- `ReceiveResult::PendingMessages` describes queued messages left after receive.
 - Status values are limited to outcomes the implementation currently produces.
 
 **Revisit when**:
@@ -544,8 +558,9 @@ struct PublishResult {
 
 - Credit is returned after `publish()`.
 - Credit is derived from `capacity - content.size()`.
-- Lane capacity currently defaults to `DEFAULT_LANE_CAPACITY` inside
-  `niniFIFO`, then lives in the FIFO's runtime `capacity_` member.
+- A lane created by `CreateLane()` uses the requested capacity. A lane created
+  lazily uses `DEFAULT_LANE_CAPACITY`. The FIFO stores the selected value in
+  its runtime `capacity_` member.
 
 **Future possibilities**:
 
@@ -554,12 +569,12 @@ struct PublishResult {
 - Rate limiting.
 - Congestion control.
 - Returning updated credit from `receive()`.
-- Per-lane capacity configuration.
+- Capacity resizing after lane creation.
 
 **Revisit when**:
 
 - Credit needs to be thread-safe.
-- Capacity becomes configurable.
+- Capacity resizing or validation rules change.
 - The bus adds blocking publish or receive APIs.
 - Back-pressure policy becomes more complex than `LaneFull`.
 
@@ -637,7 +652,8 @@ details belong inside the `lane_t` implementation.
 - `lane_t::push()` owns publish-side lane behavior: capacity checks, queue
   mutation, credit calculation, and publish status.
 - `lane_t::pop()` owns receive-side lane behavior: empty-queue checks, output
-  message mutation, FIFO removal, and receive status.
+  message mutation, FIFO removal, pending-message calculation, and receive
+  status.
 - `niniBUS.cpp` should be intentionally plain and easy to read.
 - `lane_t` helper methods such as size, capacity, and credit should be private
   unless there is a clear public API reason to expose them.
@@ -661,9 +677,8 @@ stored, credited, or removed from a lane, make that change in `lane_t`.
 
 **Status**: accepted
 
-**Decision**: when `niniBUS` needs to publish to or receive from a lane that may
-or may not already exist, use `std::unordered_map::try_emplace()` to find or
-create the lane and then delegate to the stored lane object.
+**Decision**: use `std::unordered_map::try_emplace()` for both lazy and explicit
+lane creation.
 
 Current publish-side pattern:
 
@@ -678,9 +693,16 @@ Current receive-side pattern:
 auto [it, inserted] = lane_map_.try_emplace(laneID);
 if (inserted)
 {
-    return ReceiveStatus::LazyLaneCreated;
+    return {0, ReceiveStatus::LazyLaneCreated};
 }
 return it->second.pop(message);
+```
+
+Explicit creation passes the requested capacity to the lane constructor:
+
+```cpp
+auto [it, inserted] = lane_map_.try_emplace(laneID, capacity);
+return inserted ? CreateLaneStatus::ok : CreateLaneStatus::LaneExist;
 ```
 
 **Rationale**:
@@ -711,7 +733,7 @@ return it->second.pop(message);
 **Revisit when**:
 
 - Lazy lane creation is removed.
-- Lane construction needs non-default capacity or policy arguments.
+- Lane construction needs policy arguments beyond capacity.
 - The map storage strategy changes away from `std::unordered_map`.
 
 ## DD-020 - Follow Rule Of Zero For Simple Owners
@@ -761,16 +783,15 @@ members.
 niniFIFO<std::string> content;
 ```
 
-`niniFIFO` is a circular FIFO backed by `std::vector<T>`. It owns the default
-capacity value and stores the active capacity in a runtime `capacity_` member.
+`niniFIFO` is a circular FIFO backed by `std::vector<T>`. Its constructor takes
+a capacity and stores it in a runtime `capacity_` member.
 
 **Rationale**:
 
-- Lane capacity is a FIFO property, not a lane identity or bus routing property,
-  so `DEFAULT_LANE_CAPACITY` lives in `niniFIFO.h`.
+- The lane chooses either its default capacity or the value supplied through
+  `CreateLane()`, then passes that value to the FIFO.
 - `std::vector` provides contiguous storage like `std::array`.
-- Unlike `std::array`, `std::vector` can grow or be resized later if runtime
-  capacity configuration is added.
+- Unlike `std::array`, `std::vector` supports runtime-selected capacity.
 - Keeping `capacity_` as a member moves capacity from a compile-time template
   argument to runtime state.
 - `buffer_` is initialized from `capacity_` in the constructor initializer list,
@@ -781,17 +802,18 @@ capacity value and stores the active capacity in a runtime `capacity_` member.
 
 **Consequences**:
 
-- `lane_t` is default-constructible because its FIFO has a default constructor.
+- `lane_t` is default-constructible because its constructor has a default
+  capacity argument.
 - `try_emplace(laneID)` can default-construct a missing lane directly in
   `lane_map_`.
-- Per-lane runtime capacity is not exposed through the bus API yet, but the FIFO
-  storage no longer requires capacity as a template argument.
+- Per-lane runtime capacity is exposed through `CreateLane()`; lazy creation
+  continues to use `DEFAULT_LANE_CAPACITY`.
 - `niniFIFO.cpp` is no longer part of the build because the FIFO template is
   implemented in the header.
 
 **Revisit when**:
 
-- Public per-lane capacity configuration is required.
+- Capacity must be resized after creation.
 - Memory measurements show the current `std::vector` storage is too large.
 - Queue behavior needs dynamic capacity, allocation control, or richer
   statistics.

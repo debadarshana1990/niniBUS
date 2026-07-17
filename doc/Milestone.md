@@ -123,13 +123,16 @@ Replace the lane's direct STL queue usage with a project-owned circular FIFO.
 
 ### V1.2 - V1 Cleanup and Completion
 
-Status: in progress.
+Status: completed.
 
 ### Objective
 
-Close the current V1 implementation without introducing new public APIs.
+Close the fixed-capacity portion of V1 before adding explicit lane creation.
 
 ### Tasks
+
+The following list records the fixed-capacity V1.2 scope that was completed
+before V1.3 introduced runtime capacity:
 
 - Remove duplicate full checking from `lane_t::push()`.
 - Let `niniFIFO::push_back()` own full detection.
@@ -172,7 +175,7 @@ make -C example test
 
 ### V1.3 - Runtime Capacity and FIFO API Refinement
 
-Status: planned.
+Status: in progress.
 
 ### Objective
 
@@ -191,6 +194,17 @@ Possible API:
 ```cpp
 explicit niniFIFO(uint32_t capacity = DEFAULT_LANE_CAPACITY);
 ```
+
+Current bus API:
+
+```cpp
+CreateLaneStatus CreateLane(laneID_t laneID, uint32_t capacity);
+```
+
+`CreateLane()` now creates a lane with the requested capacity. Publishing or
+receiving on an unknown lane still creates it with `DEFAULT_LANE_CAPACITY`.
+Calling `CreateLane()` for an existing ID returns `LaneExist` and preserves the
+existing lane.
 
 #### Capacity Validation
 
@@ -261,13 +275,13 @@ Decide whether `Lane` should:
 
 ### Tests
 
-- Runtime capacity constructor.
+- Runtime capacity constructor. (covered)
 - Capacity = 1.
 - Zero-capacity policy.
-- Custom-capacity full condition.
+- Custom-capacity full condition. (covered through `CreateLane()`)
 - Custom-capacity wraparound.
 - Size and capacity APIs.
-- Lane behavior with configured capacity.
+- Lane behavior with configured capacity. (covered)
 
 ### Definition Of Done
 

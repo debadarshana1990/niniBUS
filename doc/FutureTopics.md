@@ -53,7 +53,7 @@ Questions:
 
 - Should capacity be per lane or global?
 - Should queue capacity be exposed through public runtime configuration?
-- Should `capacity_` be configurable per FIFO instance?
+- Should capacity be mutable after FIFO/lane construction?
 - Should FIFO errors use return statuses, exceptions, or both?
 
 Promotion trigger:
@@ -89,7 +89,8 @@ struct PublishResult {
 
 Questions:
 
-- Should the current fixed lane capacity remain global or become configurable?
+- Should an existing lane be resizable, or should capacity remain immutable
+  after `CreateLane()`?
 - Should full lanes reject new messages, drop old messages, or use a
   configurable policy?
 - Should `LaneFull` remain simple, or should it carry richer back-pressure

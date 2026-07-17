@@ -3,6 +3,11 @@
 This file records small implementation lessons learned while building
 `niniBUS`.
 
+Current capacity model: `CreateLane(laneID, capacity)` constructs a lane with a
+caller-selected FIFO capacity. Lazy creation through `publish()` or `receive()`
+uses `DEFAULT_LANE_CAPACITY`. Several sections below preserve earlier compiler
+errors and intermediate designs for historical context.
+
 ## `unordered_map::operator[]` And `lane_t`
 
 ### Error / Compiler Note
@@ -48,10 +53,11 @@ lane_map_[laneID]
 For a map value type of `lane_t`, inserting through `operator[]` requires the
 map to be able to default-construct a `lane_t`.
 
-That is why `lane_t` keeps a default constructor:
+That is why `lane_t` remains default-constructible through a default constructor
+argument:
 
 ```cpp
-lane_t() = default;
+lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
 ```
 
 Without a default constructor, `operator[]` cannot create a missing `lane_t`,
@@ -60,8 +66,8 @@ can look noisy because it is reporting where `unordered_map::operator[]` was
 instantiated, not only the exact user-level mistake.
 
 `lane_t` no longer stores `laneID`; the lane ID lives as the map key. The
-capacity now comes from the FIFO member. `niniFIFO` owns the default value and
-stores the active capacity in its runtime `capacity_` member.
+capacity is passed from `lane_t` to the FIFO. `lane_t` owns the default value,
+and `niniFIFO` stores the selected capacity in its runtime `capacity_` member.
 
 ### Why `it->second` Is Different
 
@@ -211,6 +217,7 @@ error: redefinition of class lane_t
 If you have:
 
 - `status.h` - defines `PublishStatus`, `ReceiveStatus`, `PublishResult`
+  and `ReceiveResult`
 - `Lane.h` - includes `status.h` and defines `lane_t`
 - `niniBUS.h` - includes both `Lane.h` and `status.h`
 - `niniBUS.cpp` - includes `niniBUS.h`
@@ -270,7 +277,7 @@ Current `receive()` uses the same idea:
 auto [it, inserted] = lane_map_.try_emplace(laneID);
 if (inserted)
 {
-    return ReceiveStatus::LazyLaneCreated;
+    return {0, ReceiveStatus::LazyLaneCreated};
 }
 return it->second.pop(message);
 ```
@@ -306,6 +313,50 @@ auto& laneobj = it->second;
 ```
 
 Use a copy only when you intentionally want a separate snapshot of the value.
+
+## `ReceiveResult` - Status Plus Pending Messages
+
+### What Changed
+
+`receive()` now returns a result struct instead of only returning
+`ReceiveStatus`:
+
+```cpp
+struct ReceiveResult
+{
+    uint32_t PendingMessages;
+    ReceiveStatus Status;
+};
+```
+
+The bus API is:
+
+```cpp
+ReceiveResult receive(laneID_t laneID, std::string& message);
+```
+
+### Why This Is Better
+
+The old enum-only return could say whether receive succeeded, whether the lane
+was empty, or whether a missing lane was lazily created. It could not also tell
+the caller how many messages remain queued.
+
+`ReceiveResult` keeps those two concerns together:
+
+- `Status` tells what happened.
+- `PendingMessages` tells how many messages remain after a successful pop.
+
+This matches the direction of `PublishResult`, where `Status` tells what
+happened and `Credit` tells useful lane state after publish.
+
+### Important Detail
+
+`PendingMessages` is measured after the received message is removed. For
+example, if a lane has four messages and one receive succeeds, the returned
+pending count is three.
+
+When receive creates a missing lane or finds an existing empty lane, no message
+is returned and `PendingMessages` is zero.
 
 ## Removed Empty Destructors
 
@@ -374,8 +425,7 @@ auto [it, inserted] = lane_map_.try_emplace(laneID);
 ```
 
 This asks `std::unordered_map` to create the mapped value with no constructor
-arguments when `laneID` is missing. Because the mapped value is `lane_t`, this
-requires:
+arguments when `laneID` is missing. At that stage, the mapped `lane_t` used:
 
 ```cpp
 lane_t() = default;
@@ -397,7 +447,8 @@ niniBUS.cpp:8:37: note: ... try_emplace(laneID)
 
 ### Fix
 
-Make sure `lane_t` can be default-constructed. The current version does that:
+Make sure `lane_t` can be default-constructed. The current version does that
+with a default capacity argument:
 
 ```cpp
 class lane_t
@@ -405,7 +456,7 @@ class lane_t
     niniFIFO<std::string> content;
 
 public:
-    lane_t() = default;
+    lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content(capacity) {}
 };
 ```
 
@@ -473,8 +524,8 @@ class niniFIFO
 not require capacity to be a template argument. That makes it a better fit for a
 FIFO that may later support runtime capacity changes.
 
-`DEFAULT_LANE_CAPACITY` moved into `niniFIFO.h` because the default queue depth
-belongs to the FIFO, not to lane identity or bus routing.
+`DEFAULT_LANE_CAPACITY` now lives in `Lane.h`. The lane chooses the default or
+caller-requested capacity and passes it to `niniFIFO`.
 
 ### Stage 3 - Template Methods Stay In The Header
 
@@ -532,7 +583,7 @@ Use one state name consistently:
 ```cpp
 uint32_t currSize;
 
-niniFIFO() : capacity_(DEFAULT_LANE_CAPACITY), head_(0), tail_(0), currSize_(0)
+niniFIFO(uint32_t capacity) : capacity_(capacity), head_(0), tail_(0), currSize_(0)
 {
     buffer_.resize(capacity_);
 }
@@ -541,9 +592,9 @@ niniFIFO() : capacity_(DEFAULT_LANE_CAPACITY), head_(0), tail_(0), currSize_(0)
 The current code moved the vector setup into the initializer list:
 
 ```cpp
-niniFIFO()
-    : capacity_(DEFAULT_LANE_CAPACITY),
-      buffer_(capacity_),
+niniFIFO(uint32_t capacity)
+    : capacity_(capacity),
+      buffer_(capacity),
       head_(0),
       tail_(0),
       currSize_(0)
@@ -565,7 +616,7 @@ Current `receive()` uses:
 auto [it, inserted] = lane_map_.try_emplace(laneID);
 if (inserted)
 {
-    return ReceiveStatus::LazyLaneCreated;
+    return {0, ReceiveStatus::LazyLaneCreated};
 }
 
 lane_t& laneObj = it->second;
@@ -613,6 +664,9 @@ rm -f niniBUS.o Lane.o niniBUS.d Lane.d
 
 `try_emplace(laneID)` default-constructs the map value when the key is missing,
 so the mapped type must have a usable default constructor.
+
+`try_emplace(laneID, capacity)` forwards `capacity` only when inserting. This is
+why `CreateLane()` can select capacity without replacing an existing lane.
 
 `std::array<T, N>` needs `N` to be known at compile time. Use `std::vector`
 when capacity needs to live in runtime state.

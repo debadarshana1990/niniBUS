@@ -8,7 +8,8 @@ message queue, and `receive()` removes one message from that queue.
 
 ## Source Files
 
-- `status.h` declares publish/receive statuses and `PublishResult`.
+- `status.h` declares publish, receive, and lane-creation statuses plus their
+  result types.
 - `Lane.h` declares the `lane_t` class.
 - `Lane.cpp` implements lane-local queue behavior.
 - `niniFIFO.h` declares and implements the FIFO template.
@@ -43,8 +44,20 @@ struct PublishResult {
     PublishStatus Status;
 };
 
+struct ReceiveResult {
+    uint32_t PendingMessages;
+    ReceiveStatus Status;
+};
+
+enum class CreateLaneStatus {
+    ok,
+    LaneExist,
+    not_ok
+};
+
 PublishResult publish(laneID_t laneID, const std::string& message);
-ReceiveStatus receive(laneID_t laneID, std::string& message);
+ReceiveResult receive(laneID_t laneID, std::string& message);
+CreateLaneStatus CreateLane(laneID_t laneID, uint32_t capacity);
 ```
 
 `laneID_t` identifies a logical message lane. `lane_t` is the lane object stored
@@ -76,6 +89,7 @@ Public functions today:
 Private helper functions:
 
 - `getCredit()`: return remaining queue capacity.
+- `getPendingMessage()`: return currently queued messages.
 
 The queue data and credit helper are private. `niniBUS` does not inspect lane
 size or capacity directly; it delegates to `lane_t::push()` and `lane_t::pop()`.
@@ -98,7 +112,7 @@ std::vector<T> buffer_;
 
 Current FIFO state:
 
-- `capacity_`: current FIFO capacity, initialized to `DEFAULT_LANE_CAPACITY`.
+- `capacity_`: capacity supplied to the FIFO constructor.
 - `head_`: index of the oldest element.
 - `tail_`: index where the next element will be written.
 - `currSize_`: number of currently queued elements.
@@ -117,8 +131,9 @@ storage, but `vector` can support runtime capacity and future growth. The
 current constructor initializes `capacity_` first, then initializes `buffer_`
 with that capacity in the initializer list.
 
-`DEFAULT_LANE_CAPACITY` lives with the FIFO implementation because capacity is a
-FIFO concern, not lane identity or bus routing state.
+`DEFAULT_LANE_CAPACITY` is declared with `lane_t`. A default-constructed lane
+passes that value to its FIFO; an explicitly created lane passes the requested
+capacity instead.
 
 ### `niniBUS`
 
@@ -138,14 +153,13 @@ create the correct lane and delegate queue behavior to `lane_t`.
 
 ## Lane Creation
 
-Lanes are created lazily.
-
 A lane can be created by:
 
+- `CreateLane(laneID, capacity)` for an explicit buffer capacity.
 - `publish(laneID, message)` when publishing to a missing lane.
 - `receive(laneID, message)` when receiving from a missing lane.
 
-Creation flow:
+Lazy creation flow:
 
 1. Call `try_emplace(laneID)`.
 2. If the lane is missing, construct and insert the lane.
@@ -157,11 +171,14 @@ pass an explicit temporary `lane_t()`.
 
 Current implementation:
 
+- `CreateLane()` calls `try_emplace(laneID, capacity)`. It returns
+  `CreateLaneStatus::ok` for a new lane and `CreateLaneStatus::LaneExist` when
+  the lane already exists. Existing state and capacity are not replaced.
 - `publish()` creates a missing lane with the default `lane_t` constructor.
 - The default lane owns a FIFO whose runtime `capacity_` starts at
   `DEFAULT_LANE_CAPACITY`.
 - `receive()` uses `try_emplace()` directly. If the `inserted` flag is true, it
-  returns `ReceiveStatus::LazyLaneCreated`.
+  returns `ReceiveResult{0, ReceiveStatus::LazyLaneCreated}`.
 
 ## Publish Flow
 
@@ -199,12 +216,14 @@ Algorithm:
 
 1. Clear the output `message`.
 2. Use `try_emplace(laneID)` to get the lane or create it.
-3. If `inserted` is true, return `ReceiveStatus::LazyLaneCreated`.
+3. If `inserted` is true, return
+   `ReceiveResult{0, ReceiveStatus::LazyLaneCreated}`.
 4. Call `lane_t::pop(message)`.
-5. Return the `ReceiveStatus` produced by `lane_t::pop()`.
+5. Return the `ReceiveResult` produced by `lane_t::pop()`.
 
-`lane_t::pop()` owns the empty-queue check and output-message mutation. This keeps
-receive behavior localized to the lane.
+`lane_t::pop()` owns the empty-queue check, output-message mutation, FIFO pop,
+and pending-message count. On success, `PendingMessages` reports the number of
+messages left in the lane after the received message is removed.
 
 `receive()` is destructive. Once a message is received, it is no longer
 available.
@@ -273,9 +292,9 @@ strategy is added.
 
 ## Error Handling
 
-`publish()` returns a result struct containing both status and lane credit.
-`receive()` returns an enum status. This is clearer than a plain boolean because
-callers can distinguish full lanes, empty lanes, and lazily created lanes.
+`publish()` and `receive()` both return result structs. This is clearer than a
+plain boolean because callers can distinguish full lanes, empty lanes, and
+lazily created lanes while also reading useful queue state.
 
 Current behavior:
 
@@ -283,16 +302,18 @@ Current behavior:
 - `publish()` returns `PublishStatus::Ok` when a message was queued.
 - `publish()` returns `PublishStatus::LaneFull` when a lane has no remaining
   credit.
+- `receive()` returns `ReceiveResult{PendingMessages, Status}`.
 - `receive()` returns `ReceiveStatus::Ok` when a message was received.
-- `receive()` returns `ReceiveStatus::LazyLaneCreated` when a missing lane was
-  created for future messages.
-- `receive()` returns `ReceiveStatus::LaneEmpty` when the lane exists but has no
-  queued messages.
+- `receive()` reports pending messages after a successful pop.
+- `receive()` returns `ReceiveStatus::LazyLaneCreated` and `PendingMessages == 0`
+  when a missing lane was created for future messages.
+- `receive()` returns `ReceiveStatus::LaneEmpty` and `PendingMessages == 0` when
+  the lane exists but has no queued messages.
 
 ## Recommended Next Improvements
 
-1. Decide whether lane capacity should be configurable through public API.
-2. Decide whether public lane statistics are needed.
+1. Decide whether public lane statistics are needed.
+2. Decide how zero-capacity lane requests should be validated.
 3. Remove unused result values or implement the conditions that produce them.
 4. Add mutex protection if the bus will be used from multiple threads.
 5. Decide whether the bus should remain a competing-consumer queue or become a

@@ -13,6 +13,7 @@ private:
 
 public:
     PublishResult publish(laneID_t, const std::string& message);
-    ReceiveStatus receive(laneID_t, std::string& message);
+    ReceiveResult receive(laneID_t, std::string& message);
+    CreateLaneStatus CreateLane(laneID_t laneID,uint32_t capacity);
 
 };

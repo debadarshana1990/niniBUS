@@ -9,7 +9,7 @@ PublishResult lane_t::push(const std::string& message)
     return { 0, PublishStatus::LaneFull };
 }
 
-ReceiveStatus lane_t::pop(std::string& message)
+ReceiveResult lane_t::pop(std::string& message)
 {
     message.clear(); //clear the message string if any stray data
     if (!content.isEmpty())
@@ -17,8 +17,8 @@ ReceiveStatus lane_t::pop(std::string& message)
         message = content.front();
         if (content.pop_front() == FIFOStatus::SUCCESS)
         {
-            return ReceiveStatus::Ok;
+            return { getPendingMessage(),ReceiveStatus::Ok };
         }
     }
-    return ReceiveStatus::LaneEmpty;
+    return { 0, ReceiveStatus::LaneEmpty };
 }

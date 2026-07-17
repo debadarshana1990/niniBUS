@@ -3,7 +3,6 @@
 #include <stdexcept>
 #include <vector>
 
-#define DEFAULT_LANE_CAPACITY (uint32_t)10 //niniFIFO should holds the default value of the queue capacity not the lane
 
 enum class FIFOStatus
 {
@@ -23,7 +22,7 @@ class niniFIFO
         uint32_t currSize_;
     public:
     //public API
-    niniFIFO() : capacity_(DEFAULT_LANE_CAPACITY), buffer_(capacity_), head_(0), tail_(0), currSize_(0)
+    niniFIFO(uint32_t capacity) : capacity_(capacity), buffer_(capacity), head_(0), tail_(0), currSize_(0)
     {
     }
 
