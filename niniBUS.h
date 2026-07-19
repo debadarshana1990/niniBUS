@@ -12,8 +12,9 @@ private:
     std::unordered_map<laneID_t, lane_t> lane_map_; // map for lane id and lane object
 
 public:
-    PublishResult publish(laneID_t, const std::string& message);
-    ReceiveResult receive(laneID_t, std::string& message);
+    PublishResult publish(laneID_t laneID, const std::string& message);
+    ReceiveResult receive(laneID_t laneID, uint32_t subscriber_id, std::string& message);
     CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
+    SubscribeStatus subscribe(laneID_t laneID, uint32_t subscriber_id);
 
 };

@@ -4,7 +4,7 @@ This roadmap keeps the project focused. Each version should answer one
 engineering question and should not grow just because the next topic looks
 interesting.
 
-Current active milestone: V1.3 - Runtime Capacity and FIFO API Refinement.
+Current active milestone: V2.1.2 - Message Lifetime and Trade-offs.
 
 ## V0 - Basic Message Bus
 
@@ -295,71 +295,131 @@ At the end of V1, `niniBUS` has:
 Can I make the single-threaded bus bounded, predictable, reusable, and fully
 tested?
 
-## V2 - Broadcast Delivery Semantics
+## V2.1 - Cursor-Based Broadcast Delivery
 
-### Objective
+V2.1 introduces broadcast delivery using a **single shared queue per lane**.
 
-Evolve the V1 competing-consumer baseline to support intentional broadcast
-delivery to multiple subscribers per lane.
+Each lane continues to own only one message queue. Multiple subscribers do not
+receive separate copies of that queue. Instead, the lane maintains independent
+cursor state for every subscriber ID.
 
-### Features
+Conceptually:
 
-- Multi-subscriber support per lane.
-- Preserve and document the V1 competing-consumer behavior as the baseline.
-- Add a broadcast message model in which all current subscribers receive the
-  message.
-- Lane subscription management.
-- Subscriber lifecycle.
-- Message distribution strategy.
-- Backpressure with multiple subscribers.
+```text
+Lane
+├── Shared Message Queue
+└── Subscriber Cursor Map
+    ├── Subscriber A → cursor state
+    ├── Subscriber B → cursor state
+    └── Subscriber C → cursor state
+```
 
-### V2.1 - Design Exploration
+This allows every subscriber to consume the same published messages
+independently without duplicating message storage.
+
+### V2.1.1 - Broadcast APIs and Cursor Data Structures
+
+Status: implementation complete; message eviction intentionally deferred to
+V2.1.2.
+
+This milestone focuses on creating the APIs and internal data structures
+required for cursor-based broadcast delivery.
+
+Planned work:
+
+- [x] Define subscriber IDs.
+- [x] Add subscriber registration APIs.
+- [x] Maintain one shared queue per lane.
+- [x] Add a subscriber-to-cursor mapping.
+- [x] Initialize cursor state when subscribers register.
+- [x] Update the receive API to accept a subscriber ID.
+- [x] Advance only the requesting subscriber's cursor.
+- [x] Ensure multiple subscribers can read the same message.
+- [x] Add single-threaded functional tests.
+
+The primary data model is:
+
+```text
+Lane
+├── queue<Message>
+└── map<SubscriberId, CursorState>
+```
+
+No locks, atomics, or lock-free techniques are required in this milestone
+because the implementation remains single-threaded.
+
+#### Definition Of Done
+
+- A subscriber can be registered explicitly or automatically by `receive()`.
+- Each subscriber advances independently through retained messages.
+- Subscriber catch-up returns `ReceiveStatus::LaneEmpty`.
+- `ReceiveResult::PendingMessages` is subscriber-specific.
+- Multiple subscribers can read the same stored message.
+- Capacity-one, full-buffer wrap, different-speed subscribers, retained-history
+  registration, and empty-string messages are tested.
+
+### V2.1.2 - Message Lifetime and Trade-offs
+
+Status: in progress.
+
+Once each subscriber has independent cursor state, the next question is:
+
+**When can a message be removed from the shared queue?**
+
+A message cannot be removed when the first subscriber reads it. It must remain
+available until every active subscriber that is expected to consume it has
+moved past it.
+
+This milestone will explore:
+
+- Determining the oldest subscriber cursor.
+- Identifying messages consumed by all subscribers.
+- Reclaiming messages from the front of the shared queue.
+- Slow-subscriber behavior.
+- Subscriber registration semantics.
+- Subscriber removal.
+- Cursor initialization for late subscribers.
+- Memory growth.
+- Bounded queue behavior.
+- Backpressure when one subscriber falls behind.
+- Cleanup complexity.
+- Trade-offs between absolute indexes, relative cursors, sequence numbers, and
+  iterators.
+
+The key invariant is:
+
+> A message may be reclaimed only when no active subscriber cursor can still
+> reference it.
+
+#### Definition Of Done
+
+- Message reclamation rules are explicit and tested.
+- Subscriber removal cannot leave unreclaimable messages accidentally.
+- Late-subscriber behavior is defined.
+- Slow-subscriber and full-lane policies are documented.
+- Reclamation restores publisher credit without invalidating active cursors.
+
+## V2.2 - Concurrency
 
 Status: not started.
 
-### Objective
+After the shared-queue cursor model and message-lifetime rules are stable, V2.2
+will introduce concurrent publishers and subscribers.
 
-Explore design patterns for multi-subscriber message delivery.
-
-### Questions
-
-- Should competing and broadcast delivery both remain selectable modes?
-- Per-lane or per-subscriber buffers?
-- How to handle backpressure from slow subscribers?
-- Subscriber identification.
-- Subscription/unsubscription mechanism.
-- Message ownership and lifetime.
-- Resource management with multiple subscribers.
-
-### V2.2 - TBD
-
-Status: not started.
-
-### Objective
-
-Complete design decisions from V2.1 exploration.
-
-### Tasks
-
-- [ ] Decide on multi-subscriber modes
-- [ ] Design subscriber interface
-- [ ] Design buffer strategy
-- [ ] Design backpressure handling
-- [ ] Define API
-
-### Definition Of Done
-
-- Multi-subscriber design is complete and documented.
+That milestone will explore synchronization, locks, atomics, memory ordering,
+and possible lock-free designs.
 
 ### Engineering Question
 
-Can `niniBUS` support multiple subscribers with predictable message delivery?
+Can `niniBUS` provide predictable broadcast delivery from one shared queue and
+then preserve those semantics under concurrent access?
 
-## V3 - Thread-Safe Message Bus
+## V3 - Concurrency Hardening And Measurement
 
 ### Objective
 
-Support safe concurrent publishing and receiving.
+Harden and measure the concurrency model introduced in V2.2 after its basic
+correctness is established.
 
 ### Features
 

@@ -27,3 +27,9 @@ enum class CreateLaneStatus
     LaneExists,
     InvalidCapacity
 };
+
+enum class SubscribeStatus
+{
+    Ok,
+    AlreadySubscribed
+};

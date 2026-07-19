@@ -87,7 +87,7 @@ communication path. Applications assign meaning to lane IDs.
 
 - The project needs named lanes, typed lanes, or discovery metadata.
 
-## DD-004 - One FIFO Queue Per Lane
+## DD-004 - One Shared FIFO Queue Per Lane
 
 **Status**: accepted
 
@@ -98,15 +98,17 @@ communication path. Applications assign meaning to lane IDs.
 - FIFO ordering is easy to reason about.
 - Independent queues isolate traffic between lanes.
 - This keeps the V0 implementation small.
-- The current FIFO is `niniFIFO<std::string>`, a circular buffer backed by
+- The current FIFO is `niniCFIFO<std::string>`, a circular buffer backed by
   `std::vector`.
 
 **Consequences**:
 
 - Messages in the same lane are received in publish order.
 - Lanes do not block each other at the data-structure level.
-- Multiple receivers on the same lane compete for messages.
-- The bus is a work queue, not broadcast pub/sub.
+- Multiple subscribers share the stored messages but advance independent read
+  counts.
+- One message can be read by multiple subscribers without storing one copy per
+  subscriber.
 
 **Alternative considered**: one global queue.
 
@@ -118,8 +120,8 @@ communication path. Applications assign meaning to lane IDs.
 
 **Revisit when**:
 
-- Broadcast semantics become a requirement.
-- Per-subscriber queues or cursors are introduced.
+- Per-subscriber message copies are required.
+- Queue-slot eviction changes shared-message retention.
 
 ## DD-005 - Publish And Receive API
 
@@ -129,23 +131,25 @@ communication path. Applications assign meaning to lane IDs.
 
 ```cpp
 PublishResult publish(laneID_t laneID, const std::string& message);
-ReceiveResult receive(laneID_t laneID, std::string& message);
+ReceiveResult receive(
+    laneID_t laneID,
+    uint32_t subscriberID,
+    std::string& message);
 CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
+SubscribeStatus subscribe(laneID_t laneID, uint32_t subscriberID);
 ```
 
 **Rationale**:
 
 - `publish()` is the familiar operation for adding data to a bus, and now
   returns both publish status and remaining lane credit.
-- `receive()` clearly communicates destructive FIFO consumption and returns a
-  `ReceiveResult` so callers can distinguish success, empty lane, lazy lane
-  creation, and pending messages after a successful pop.
+- `receive()` reads and advances one subscriber cursor and returns a
+  `ReceiveResult` so callers can distinguish success, subscriber catch-up,
+  lazy lane creation, and subscriber-specific pending messages.
 - `createLane()` supports applications that need a known per-lane capacity
   before the first message is published.
-- A separate `subscribe()` function is not required right now because
-  `receive()` already lazily creates missing lanes.
-- Removing `subscribe()` avoids an API that only duplicates lane creation
-  behavior without tracking real subscribers.
+- `subscribe()` explicitly registers a subscriber cursor; `receive()` also
+  creates the cursor automatically when it is missing.
 
 **Consequences**:
 
@@ -155,8 +159,8 @@ CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
   internals.
 - Receivers can read `ReceiveResult::PendingMessages` without separately
   querying lane internals.
-- There is no subscription registry, callback registration, or subscriber
-  identity tracking in the current API.
+- Subscriber identities and cursors are tracked per lane. Callback registration
+  is not part of the current API.
 
 **Revisit when**:
 
@@ -773,17 +777,17 @@ members.
 - Lane storage changes to raw pointers or manually managed memory.
 - A future transport layer opens files, sockets, threads, or OS handles.
 
-## DD-021 - Use `niniFIFO` With Runtime Capacity State
+## DD-021 - Use `niniCFIFO` With Runtime Capacity State
 
 **Status**: current
 
 **Decision**: each `lane_t` stores messages in:
 
 ```cpp
-niniFIFO<std::string> content_;
+niniCFIFO<std::string> content_;
 ```
 
-`niniFIFO` is a circular FIFO backed by `std::vector<T>`. Its constructor takes
+`niniCFIFO` is a circular FIFO backed by `std::vector<T>`. Its constructor takes
 a capacity and stores it in a runtime `capacity_` member.
 
 **Rationale**:
@@ -808,8 +812,7 @@ a capacity and stores it in a runtime `capacity_` member.
   `lane_map_`.
 - Per-lane runtime capacity is exposed through `createLane()`; lazy creation
   continues to use `DEFAULT_LANE_CAPACITY`.
-- `niniFIFO.cpp` is no longer part of the build because the FIFO template is
-  implemented in the header.
+- `niniCFIFO` is implemented in its header because it is a template.
 
 **Revisit when**:
 
@@ -822,20 +825,20 @@ a capacity and stores it in a runtime `capacity_` member.
 
 **Status**: accepted
 
-**Decision**: `niniFIFO::push_back()` and `niniFIFO::pop_front()` return
-`FIFOStatus`.
+**Decision**: `niniCFIFO::push()` and `niniCFIFO::read()` return `CFIFOStatus`.
 
 **Rationale**:
 
-- `push_back()` can fail when the FIFO is full.
-- `pop_front()` can fail when the FIFO is empty.
+- `push()` can fail when the shared FIFO is full.
+- `read()` can fail when the requesting subscriber is caught up.
 - Returning status keeps FIFO mutation APIs aligned with the rest of the project
   style, where operations report success/failure explicitly.
-- `front()` remains an STL-style accessor that returns the current front item.
+- Successful `read()` writes the message through an output reference so an
+  empty string remains distinguishable from an unavailable message.
 
 **Consequences**:
 
-- `lane_t::push()` can map `FIFOStatus::FULL` to `PublishStatus::LaneFull`.
+- `lane_t::push()` can map `CFIFOStatus::FULL` to `PublishStatus::LaneFull`.
 - `lane_t::pop()` can use the FIFO state to map empty queues to
   `ReceiveStatus::LaneEmpty`.
 - FIFO callers have one consistent way to see mutation failure.
@@ -845,3 +848,103 @@ a capacity and stores it in a runtime `capacity_` member.
 - FIFO APIs need exceptions instead of status values.
 - The project introduces richer error payloads.
 - `front()` needs a non-throwing alternative.
+
+## DD-023 - Combine Automatic Subscription And Cursor Read
+
+**Status**: current
+
+**Decision**: `niniCFIFO::read(subscriberID, message)` uses
+`cursor_map_.try_emplace()` to find an existing subscriber cursor or create a
+new cursor, then reads and advances that cursor in the same operation.
+
+```cpp
+CFIFOStatus read(uint32_t subscriberID, T& message);
+```
+
+`niniBUS::receive()` does not call `addSubscriber()` on every receive. It
+delegates to `lane_t::pop()`, which calls `niniCFIFO::read()`.
+
+**Rationale**:
+
+- Automatic subscription remains part of the receive contract.
+- Calling `addSubscriber()` before every read performs one cursor-map lookup,
+  followed by another lookup when reading the message.
+- `try_emplace()` performs one lookup and returns the cursor iterator needed by
+  the read operation.
+- A named `read()` operation communicates that the call mutates subscriber
+  cursor state. `operator[]` would look like ordinary indexed access even though
+  it can register a subscriber, advance a cursor, and report an empty queue.
+- Returning `CFIFOStatus` distinguishes a successfully read empty string from
+  an unavailable message.
+
+**Consequences**:
+
+- The first receive on an existing lane automatically creates the subscriber
+  cursor.
+- Later receives reuse the existing cursor without a separate registration
+  lookup.
+- Only the requesting subscriber's cursor advances.
+- Multiple subscribers can independently read the same shared message.
+- Explicit `subscribe()` remains available for callers that want to register
+  before receiving.
+- Queue-slot eviction is intentionally not part of this decision and remains
+  deferred.
+
+**Revisit when**:
+
+- Cursor initialization for late subscribers changes.
+- Eviction adds per-subscriber availability or generation tracking.
+- Subscription and receive need different authorization or lifecycle rules.
+
+## DD-024 - Separate Bounded Cursor Position From Read Count
+
+**Status**: current
+
+**Decision**: `niniCFIFO` stores two bounded values for each subscriber:
+
+```cpp
+struct CursorState
+{
+    uint32_t position;
+    uint32_t messages_read;
+};
+```
+
+`position` advances modulo capacity. `messages_read` advances only after a
+successful read and cannot exceed the retained queue `size_`, which itself
+cannot exceed capacity while eviction is deferred.
+
+A subscriber is caught up when `messages_read >= size_`, and its pending count
+is:
+
+```text
+size_ - messagesRead
+```
+
+**Rationale**:
+
+- A modulo cursor position cannot distinguish a new subscriber at index zero
+  from a caught-up subscriber whose cursor wrapped to zero.
+- The bounded read count prevents subscribers from reading unpublished slots or repeating
+  a retained message after catch-up.
+- Pending-message counts remain correct when the physical index wraps.
+- Cursor position never grows beyond the configured capacity, avoiding an
+  unbounded counter for physical addressing on embedded targets.
+- Each subscriber advances independently while all subscribers share one stored
+  copy of each message.
+
+**Consequences**:
+
+- A caught-up subscriber receives `ReceiveStatus::LaneEmpty`.
+- `ReceiveResult::PendingMessages` is subscriber-specific.
+- Capacity-one queues do not repeat a message on successive receives.
+- Newly registered subscribers begin with read count zero and can read all
+  currently retained messages.
+- The global queue remains full after reaching capacity because eviction is not
+  implemented yet.
+
+**Revisit when**:
+
+- Eviction introduces a nonzero global head sequence.
+- Late subscribers should start at the current tail instead of retained history.
+- Eviction requires resetting or rebasing `messages_read` and `size_` together.
