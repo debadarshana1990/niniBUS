@@ -123,6 +123,8 @@ capacity:
 - `doc/Milestone.md` - phased roadmap and TODO lists.
 - `doc/FutureTopics.md` - deferred ideas and research topics.
 - `doc/Learning.md` - implementation lessons and compiler notes.
+- `doc/cfifo.md` - Cursor FIFO public API, usage examples, and current
+  limitations.
 
 ## Documentation
 
