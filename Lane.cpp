@@ -1,4 +1,5 @@
 #include "Lane.h"
+#include "cfifo.h"
 
 PublishResult lane_t::push(const std::string& message)
 {

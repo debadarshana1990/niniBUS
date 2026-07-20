@@ -9,6 +9,7 @@ LIB := libniniBUS.a
 
 LIB_SRCS := niniBUS.cpp Lane.cpp
 LIB_OBJS := $(LIB_SRCS:.cpp=.o)
+LIB_HEADERS := cfifo.h
 
 DEPS := $(LIB_OBJS:.o=.d)
 
@@ -26,7 +27,7 @@ $(LIB): $(LIB_OBJS)
 
 niniBUS: lib
 
-%.o: %.cpp
+%.o: %.cpp $(LIB_HEADERS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 -include $(DEPS)
