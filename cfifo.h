@@ -85,7 +85,7 @@ class cfifo
         }
         bool add_cursor(cursor_type idx)
         {
-            auto [_,inserted] = cursor_map_.try_emplace(idx);
+            auto [_,inserted] = cursor_map_.try_emplace(idx,tailSeq_);
             return inserted;
         }
         bool contains_cursor(cursor_type idx) const

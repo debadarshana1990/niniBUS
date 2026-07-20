@@ -195,15 +195,15 @@ else if (result.status == CFIFOWriteStatus::Q_FULL)
 bool add_cursor(cursor_type id);
 ```
 
-Registers a cursor ID. In the current implementation, the mapped sequence value
-is value-initialized to zero:
+Registers a cursor ID at the current global tail sequence:
 
 ```cpp
-cursor_map_.try_emplace(id);
+auto [it, inserted] = cursor_map_.try_emplace(id, tailSeq_);
 ```
 
-Therefore, a newly registered cursor starts at sequence zero and can read
-retained history from the beginning of the current queue generation.
+Therefore, a newly registered cursor is initially caught up. It receives
+messages written **after registration** and does not read messages that were
+already retained before registration.
 
 ```cpp
 messages.add_cursor(100);
@@ -212,12 +212,13 @@ messages.add_cursor(200);
 
 `add_cursor()` returns `true` when a new cursor is registered. It returns
 `false` when the cursor ID already exists, and the existing cursor position
-remains unchanged.
+remains unchanged because `try_emplace()` does not replace an existing mapped
+value.
 
 ### Check cursor registration
 
 ```cpp
-bool contains_cursor(cursor_type id);
+bool contains_cursor(cursor_type id) const;
 ```
 
 Returns `true` when the cursor ID exists.
@@ -269,7 +270,7 @@ case CFIFOReadStatus::FAILED:
 ```cpp
 bool empty() const;
 bool full() const;
-uint32_t credit() const;
+size_type credit() const;
 size_type size() const;
 size_type capacity() const;
 ```
@@ -358,6 +359,7 @@ Current consequences:
 - Once the queue becomes full, later writes return `Q_FULL`.
 - Cursor removal is not available yet.
 - Slow-subscriber and reclamation policies are not defined yet.
+- Late cursors start at the current tail and receive only future writes.
 - The class is single-threaded; concurrent calls require external
   synchronization.
 - The sequence-number overflow policy is not defined yet.
@@ -378,6 +380,7 @@ read(cursor, message);
 ```
 
 Expected future work includes cursor removal, shared-slot reclamation,
-late-cursor policy options, sequence overflow handling, and synchronization.
+optional retained-history registration modes, sequence overflow handling, and
+synchronization.
 These changes must preserve the defining model: one shared message queue with
 independent cursor progress and no per-reader message duplication.
