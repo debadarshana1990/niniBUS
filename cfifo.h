@@ -5,6 +5,8 @@
 #include <unordered_map>
 
 
+using size_type = std::uint32_t;
+
 enum class CFIFOWriteStatus
 {
     SUCCESS,
@@ -21,13 +23,13 @@ enum class CFIFOReadStatus
 struct CFIFOWriteResult
 {
     CFIFOWriteStatus status;
-    uint32_t credit;
+    size_type credit;
 };
 
 struct CFIFOReadResult
 {
     CFIFOReadStatus status;
-    uint32_t PendingMessage;
+    size_type pendingMessage;
 };
 
 template <typename T>
@@ -35,24 +37,29 @@ class cfifo
 {
     public:
         using value_type = T;
-        using size_type = std::uint32_t;
+
         using sequence_type = std::uint64_t;
         using cursor_type = std::uint32_t;
 
         explicit cfifo(size_type capacity):
-        buffer_(capacity_),
+        buffer_(capacity),
         size_(0),
         capacity_(capacity),
         headSeq_(0),
         tailSeq_(0)
-        {}
+        {
+            if (capacity == 0)
+            {
+                throw std::invalid_argument("cfifo capacity must be greater than zero");
+            }
+        }
 
         CFIFOWriteResult write(const T& val)
         {
             if(full())
                 return { CFIFOWriteStatus::Q_FULL, 0};
-            sequence_type writeIdx = tailSeq_ % capacity_;
-            buffer_[writeIdx] = val;
+            const size_type write_index = static_cast<size_type>(tailSeq_ % capacity_);
+            buffer_[write_index] = val;
             tailSeq_++;
             size_++;
             return { CFIFOWriteStatus::SUCCESS,credit()};
@@ -68,23 +75,23 @@ class cfifo
                 return {CFIFOReadStatus::NO_CURSOR, 0};
             if(caught_up(it->second))
                 return { CFIFOReadStatus::NO_PENDING_MESSAGE,0};
-            sequence_type& readIdx = it->second;
-            msg = buffer_[readIdx % capacity_];
-            readIdx++;
-            return { CFIFOReadStatus::SUCCESS,pending(readIdx)};
+            sequence_type& read_seq = it->second;
+            const sequence_type read_index = static_cast<size_type> (read_seq % capacity_);
+            msg = buffer_[read_index];
+            read_seq++;
+            return { CFIFOReadStatus::SUCCESS,pending(read_seq)};
 
 
         }
         bool add_cursor(cursor_type idx)
         {
-            cursor_map_[idx] = tailSeq_;   // read from the latest
-            return true;
+            auto [_,inserted] = cursor_map_.try_emplace(idx);
+            return inserted;
         }
-        bool contains_cursor(cursor_type idx)
+        bool contains_cursor(cursor_type idx) const
         {
-            if(cursor_map_.find(idx) != cursor_map_.end())
-                return true;
-            return false;
+            return cursor_map_.find(idx) != cursor_map_.end();
+  
         }
 
         /* global attribute of the buffer Q*/
@@ -96,7 +103,7 @@ class cfifo
         {
             return (size_ == 0);
         }
-        uint32_t credit() const
+        size_type credit() const
         {
             return capacity_ - size_;
         }
@@ -113,10 +120,10 @@ class cfifo
         std::unordered_map<cursor_type,sequence_type> cursor_map_;
         size_type size_;                 //size of the queue (all occupied slots)
         size_type capacity_;             // global capacity (bounded buffer)
-        sequence_type headSeq_;              //global headSeq
+        sequence_type headSeq_;              //// oldest retained sequence; advanced by future reclaim()
         sequence_type tailSeq_;             //global tailseq used for writing into the queue
 
-        bool claimSlots(); //TBD
+        bool reclaim(); //TBD
 
 
         bool caught_up(sequence_type readSeq) const

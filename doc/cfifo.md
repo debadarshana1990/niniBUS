@@ -36,14 +36,28 @@ cfifo<std::string> messages(16);
 
 Capacity should be greater than zero.
 
-## STL-Inspired Design
+## Purpose And Design Direction
 
-`cfifo` is intended to feel familiar to users of the C++ Standard Library. It
-provides container-style type aliases and inspection functions:
+`cfifo` is a purpose-built data structure for cursor-based FIFO delivery. Its
+API is intentionally centered on two data operations:
 
 ```cpp
+write(value);
+read(cursor, message);
+```
+
+The design borrows familiar C++ container conventions such as `value_type`,
+`size_type`, `size()`, `capacity()`, and `empty()`. This makes the type easier
+for C++ developers to understand, but `cfifo` is **not intended to become an STL
+container**.
+
+Current type aliases are:
+
+```cpp
+using size_type = std::uint32_t; // Namespace scope.
+
+// Inside cfifo<T>:
 using value_type = T;
-using size_type = std::uint32_t;
 using sequence_type = std::uint64_t;
 using cursor_type = std::uint32_t;
 ```
@@ -55,10 +69,28 @@ size_type size() const;
 size_type capacity() const;
 ```
 
-It is currently **STL-inspired**, not a fully STL-conforming container. It does
-not provide iterators, allocator support, standard container concepts, or the
-usual `push_back()`/`front()`/`pop_front()` interface. Cursor-based reads have
-different semantics from destructive standard FIFO operations.
+It deliberately does not expose `push()`, `push_back()`, `front()`, or
+`pop_front()`. Those names suggest conventional destructive queue behavior,
+while Cursor FIFO has one shared message store and independent reader progress.
+The public data-operation vocabulary will remain `write()` and `read()`.
+
+## Primary Use Case
+
+Use `cfifo<T>` when:
+
+- One producer-side message store should be shared by multiple readers.
+- Each reader is identified by a numeric cursor ID.
+- Every cursor must progress independently.
+- Multiple cursors may read the same stored message.
+- Message storage should not be duplicated per reader.
+- Queue capacity and write credit must remain bounded and observable.
+
+The intention is to provide a dedicated Cursor FIFO abstraction for one-to-many
+message delivery: write each message once, retain it in one bounded shared
+buffer, and let multiple registered cursors read it independently. Familiar C++
+container naming is used only where it makes the API easier to understand.
+`cfifo` is not intended as a drop-in replacement for `std::queue`, `std::deque`,
+or another STL container, and STL interface compatibility is not a design goal.
 
 ## Status And Result Types
 
@@ -85,7 +117,7 @@ enum class CFIFOWriteStatus
 struct CFIFOWriteResult
 {
     CFIFOWriteStatus status;
-    uint32_t credit;
+    size_type credit;
 };
 ```
 
@@ -117,11 +149,11 @@ enum class CFIFOReadStatus
 struct CFIFOReadResult
 {
     CFIFOReadStatus status;
-    uint32_t PendingMessage;
+    size_type pendingMessage;
 };
 ```
 
-`PendingMessage` reports how many messages remain unread by that cursor after a
+`pendingMessage` reports how many messages remain unread by that cursor after a
 successful read.
 
 ## Public API
@@ -132,9 +164,9 @@ successful read.
 explicit cfifo(size_type capacity);
 ```
 
-Constructs a bounded Cursor FIFO with the requested shared-buffer capacity.
-The constructor is `explicit`, so an integer cannot be implicitly converted
-into a `cfifo` object.
+Constructs a bounded Cursor FIFO with the requested shared-buffer capacity. A
+capacity of zero throws `std::invalid_argument`. The constructor is `explicit`,
+so an integer cannot be implicitly converted into a `cfifo` object.
 
 ### Write a message
 
@@ -163,24 +195,24 @@ else if (result.status == CFIFOWriteStatus::Q_FULL)
 bool add_cursor(cursor_type id);
 ```
 
-Registers a cursor ID. In the current implementation, a cursor starts at the
-current global tail sequence:
+Registers a cursor ID. In the current implementation, the mapped sequence value
+is value-initialized to zero:
 
 ```cpp
-cursor_map_[id] = tailSeq_;
+cursor_map_.try_emplace(id);
 ```
 
-Therefore, the cursor receives messages written **after registration**. It does
-not read messages that were already retained before it was registered.
+Therefore, a newly registered cursor starts at sequence zero and can read
+retained history from the beginning of the current queue generation.
 
 ```cpp
 messages.add_cursor(100);
 messages.add_cursor(200);
 ```
 
-Calling `add_cursor()` with an existing ID currently resets that cursor to the
-latest tail sequence and returns `true`. Callers should check
-`contains_cursor()` first when resetting an existing cursor is not intended.
+`add_cursor()` returns `true` when a new cursor is registered. It returns
+`false` when the cursor ID already exists, and the existing cursor position
+remains unchanged.
 
 ### Check cursor registration
 
@@ -215,7 +247,7 @@ switch (result.status)
 {
 case CFIFOReadStatus::SUCCESS:
     std::cout << "message: " << message << '\n';
-    std::cout << "pending: " << result.PendingMessage << '\n';
+    std::cout << "pending: " << result.pendingMessage << '\n';
     break;
 
 case CFIFOReadStatus::NO_PENDING_MESSAGE:
@@ -250,6 +282,12 @@ These functions describe the **shared queue**, not an individual cursor:
 - `size()` reports occupied shared-buffer slots.
 - `capacity()` reports the configured maximum slot count.
 
+Queue emptiness and cursor catch-up are different states. A queue may be
+non-empty even when a particular cursor has no pending messages. Use the
+`CFIFOReadResult` returned by `read()`—specifically
+`CFIFOReadStatus::NO_PENDING_MESSAGE`—or a future cursor-specific pending API to
+determine whether that cursor is caught up.
+
 ## Complete Example
 
 ```cpp
@@ -281,12 +319,12 @@ int main()
 
     auto aliceFirst = queue.read(alice, message);
     assert(aliceFirst.status == CFIFOReadStatus::SUCCESS);
-    assert(aliceFirst.PendingMessage == 1);
+    assert(aliceFirst.pendingMessage == 1);
     assert(message == "first");
 
     auto aliceSecond = queue.read(alice, message);
     assert(aliceSecond.status == CFIFOReadStatus::SUCCESS);
-    assert(aliceSecond.PendingMessage == 0);
+    assert(aliceSecond.pendingMessage == 0);
     assert(message == "second");
 
     auto aliceCaughtUp = queue.read(alice, message);
@@ -309,24 +347,6 @@ g++ -std=c++17 -Wall -Wextra -I. example.cpp -o example
 
 ## Message Lifetime And Current Limitations
 
-### Constructor implementation note
-
-The current header initializes `buffer_` with `capacity_` before `capacity_` is
-initialized, because C++ initializes members in declaration order:
-
-```cpp
-buffer_(capacity_)
-```
-
-The backing vector should be initialized from the constructor parameter instead:
-
-```cpp
-buffer_(capacity)
-```
-
-This implementation issue should be corrected before relying on the runnable
-examples above.
-
 Cursor reads currently do not reclaim shared-buffer slots. A message must
 eventually remain available until every relevant subscriber has moved past it,
 but that reclamation policy is not implemented yet.
@@ -340,26 +360,24 @@ Current consequences:
 - Slow-subscriber and reclamation policies are not defined yet.
 - The class is single-threaded; concurrent calls require external
   synchronization.
-- Copy and move overloads, iterators, allocators, and standard range support are
-  not implemented yet.
+- The sequence-number overflow policy is not defined yet.
 
 The reclamation invariant for future work is:
 
 > A message may be reclaimed only when no active subscriber cursor can still
 > reference it.
 
-## Possible STL-Style Refinements
+## API Direction
 
-Future API refinements may include:
+Future work should strengthen Cursor FIFO semantics rather than move toward STL
+conformance. The core data API remains:
 
-- `push()` or `push_back()` naming in addition to `write()`.
-- `emplace()` for in-place message construction.
-- An rvalue overload such as `write(T&&)`.
-- `max_size()` and allocator-aware construction.
-- Standardized lowercase result member names such as `pending_messages`.
-- `const` on `contains_cursor()`.
-- Cursor registration that reports whether insertion actually occurred.
-- Cursor removal and safe shared-slot reclamation.
+```cpp
+write(value);
+read(cursor, message);
+```
 
-These refinements should preserve the defining Cursor FIFO behavior: one shared
-message queue with independent reader progress.
+Expected future work includes cursor removal, shared-slot reclamation,
+late-cursor policy options, sequence overflow handling, and synchronization.
+These changes must preserve the defining model: one shared message queue with
+independent cursor progress and no per-reader message duplication.
