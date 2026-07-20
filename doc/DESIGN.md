@@ -12,7 +12,7 @@ message queue, and `receive()` removes one message from that queue.
   result types.
 - `Lane.h` declares the `lane_t` class.
 - `Lane.cpp` implements lane-local queue behavior.
-- `niniCFIFO.h` declares and implements the cursor-based FIFO template.
+- `niniFIFO.h` declares and implements the FIFO template.
 - `niniBUS.h` declares the public bus API.
 - `niniBUS.cpp` implements lane lookup, lazy lane creation, and delegation to
   `lane_t`.
@@ -56,12 +56,8 @@ enum class CreateLaneStatus {
 };
 
 PublishResult publish(laneID_t laneID, const std::string& message);
-ReceiveResult receive(
-    laneID_t laneID,
-    uint32_t subscriberID,
-    std::string& message);
+ReceiveResult receive(laneID_t laneID, std::string& message);
 CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
-SubscribeStatus subscribe(laneID_t laneID, uint32_t subscriberID);
 ```
 
 `laneID_t` identifies a logical message lane. `lane_t` is the lane object stored
@@ -75,8 +71,7 @@ inside the bus map.
 
 Private fields:
 
-- `content_`: a `niniCFIFO<std::string>` containing shared retained messages
-  and subscriber read counts.
+- `content_`: a `niniFIFO<std::string>` containing pending messages.
 
 `lane_t` does not store its own lane ID. The lane ID is already the key in
 `niniBUS::lane_map_`, so storing the same value inside every lane object would
@@ -89,13 +84,12 @@ lifetimes.
 Public functions today:
 
 - `push(message)`: append a message to the lane queue.
-- `pop(subscriberID, message)`: read and advance the requesting subscriber.
+- `pop(message)`: remove the oldest queued message into the output string.
 
 Private helper functions:
 
 - `credit()`: return remaining queue capacity.
-- `getPendingMessage(subscriberID)`: return messages not yet read by that
-  subscriber.
+- `getPendingMessage()`: return currently queued messages.
 
 The queue data and credit helper are private. `niniBUS` does not inspect lane
 size or capacity directly; it delegates to `lane_t::push()` and `lane_t::pop()`.
@@ -106,10 +100,9 @@ size or capacity directly; it delegates to `lane_t::push()` and `lane_t::pop()`.
 content_.capacity() - content_.size()
 ```
 
-### `niniCFIFO`
+### `niniFIFO`
 
-`niniCFIFO<T>` is a shared circular FIFO with one bounded cursor position and
-one bounded messages-read count per subscriber.
+`niniFIFO<T>` is a circular FIFO template.
 
 It stores data in:
 
@@ -120,18 +113,16 @@ std::vector<T> buffer_;
 Current FIFO state:
 
 - `capacity_`: capacity supplied to the FIFO constructor.
+- `head_`: index of the oldest element.
 - `tail_`: index where the next element will be written.
 - `size_`: number of currently queued elements.
-- `cursor_map_`: subscriber ID to bounded cursor state.
 
 Current FIFO operations:
 
-- `push(message)`: append unless the shared FIFO is full, returning
-  `CFIFOStatus`.
-- `read(subscriberID, message)`: find or create the subscriber read count,
-  reject a read after catch-up, otherwise read and advance only that subscriber.
-- `addCursor()` and `hasCursor()`: explicit subscriber registration helpers.
-- `pending(subscriberID)`: return the subscriber's unread retained messages.
+- `push_back(message)`: append unless the FIFO is full, returning
+  `FIFOStatus`.
+- `pop_front()`: remove the oldest element, returning `FIFOStatus`.
+- `front()`: return the oldest element, following the STL-style naming used by
   queue-like containers.
 - `empty()`, `full()`, `size()`, and `capacity()`: inspect FIFO state.
 
@@ -220,8 +211,7 @@ Current publish statuses:
 
 ## Receive Flow
 
-`receive(laneID, subscriberID, message)` tries to read the subscriber's next
-retained message from a lane.
+`receive(laneID, message)` tries to remove one queued message from a lane.
 
 Algorithm:
 
@@ -229,14 +219,15 @@ Algorithm:
 2. Use `try_emplace(laneID)` to get the lane or create it.
 3. If `inserted` is true, return
    `ReceiveResult{0, ReceiveStatus::LazyLaneCreated}`.
-4. Call `lane_t::pop(subscriberID, message)`. The CFIFO finds or creates the
-   subscriber read count in the same lookup used by the read.
+4. Call `lane_t::pop(message)`.
 5. Return the `ReceiveResult` produced by `lane_t::pop()`.
 
-`lane_t::pop()` owns subscriber catch-up detection, output-message mutation,
-cursor advancement, and pending-message calculation. On success,
-`PendingMessages` reports the retained messages that the requesting subscriber
-has not read.
+`lane_t::pop()` owns the empty-queue check, output-message mutation, FIFO pop,
+and pending-message count. On success, `PendingMessages` reports the number of
+messages left in the lane after the received message is removed.
+
+`receive()` is destructive. Once a message is received, it is no longer
+available.
 
 ## Delivery Semantics
 
@@ -244,13 +235,12 @@ The bus has one queue per lane.
 
 This means:
 
-- A message is stored once in the lane queue.
-- Each subscriber has an independent monotonic read count.
-- Reading advances only the requesting subscriber.
-- Multiple subscribers can read the same retained message.
-- A caught-up subscriber receives `ReceiveStatus::LaneEmpty` even while another
-  subscriber still has unread messages.
-- Queue-slot eviction is deferred; reads do not currently restore lane credit.
+- Each message can be received once.
+- Multiple receivers on the same lane compete for messages.
+- The bus does not broadcast a copy of each message to every subscriber.
+- There are no per-subscriber cursors.
+
+This is work-queue behavior, not broadcast pub/sub behavior.
 
 ## Build Layout
 
@@ -278,11 +268,11 @@ files from the example folder.
 Lanes are stored by value in `lane_map_`, so normal container destruction
 releases all lane objects when the bus is destroyed.
 
-`niniBUS`, `lane_t`, and `niniCFIFO` do not declare custom destructors or copy
+`niniBUS`, `lane_t`, and `niniFIFO` do not declare custom destructors or copy
 constructors right now. They do not own raw pointers, file handles, threads,
 sockets, or other resources that need manual cleanup. The compiler-generated
 special members are enough: `std::unordered_map` destroys the stored lanes, and
-each lane's `niniCFIFO` destroys its internal containers.
+each lane's `niniFIFO` destroys its internal `std::vector`.
 
 Older shutdown/debug destructor messages were removed because library object
 destruction should not print to stdout/stderr as a side effect. If future code
@@ -320,8 +310,6 @@ Current behavior:
   when a missing lane was created for future messages.
 - `receive()` returns `ReceiveStatus::LaneEmpty` and `PendingMessages == 0` when
   the lane exists but has no queued messages.
-- `receive()` automatically adds a cursor when the subscriber ID is not yet
-  registered on an existing lane.
 
 ## Recommended Next Improvements
 

@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include "niniCFIFO.h"
+#include "niniFIFO.h"
 #include "status.h"
 
 
@@ -10,14 +10,14 @@ class lane_t
 {
 
     // Bounded message storage for this lane.
-    niniCFIFO<std::string> content_;
+    niniFIFO<std::string> content_;
     uint32_t credit() const
     {
-        return content_.capacity() - content_.size(); //credit is for the global queue
+        return content_.capacity() - content_.size();
     }
-    uint32_t getPendingMessage(uint32_t subscriber_id) const
+    uint32_t getPendingMessage() const
     {
-        return content_.pending(subscriber_id);
+        return content_.size();
     }
     
 public:
@@ -26,7 +26,6 @@ public:
 
 
     PublishResult push(const std::string& message);
-    ReceiveResult pop(uint32_t subscriber_id, std::string& message);
-    SubscribeStatus addSubscriber(uint32_t subscriber_id);
-
+    ReceiveResult pop(std::string& message);
+    
 };

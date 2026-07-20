@@ -42,12 +42,8 @@ enum class CreateLaneStatus {
 };
 
 PublishResult publish(laneID_t laneID, const std::string& message);
-ReceiveResult receive(
-    laneID_t laneID,
-    uint32_t subscriberID,
-    std::string& message);
+ReceiveResult receive(laneID_t laneID, std::string& message);
 CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
-SubscribeStatus subscribe(laneID_t laneID, uint32_t subscriberID);
 ```
 
 ## How It Works
@@ -55,8 +51,8 @@ SubscribeStatus subscribe(laneID_t laneID, uint32_t subscriberID);
 - `createLane()` explicitly creates a lane with a caller-selected capacity.
 - A lane is also created lazily with `DEFAULT_LANE_CAPACITY` when it is first
   published to or received from.
-- Each lane stores messages once in `niniCFIFO<std::string>`.
-- `lane_t` supplies the default capacity, while `niniCFIFO` stores the selected
+- Each lane stores messages in `niniFIFO<std::string>`.
+- `lane_t` supplies the default capacity, while `niniFIFO` stores the selected
   capacity in a runtime `capacity_` member.
 - FIFO storage uses `std::vector`, which is contiguous like `std::array` while
   leaving room for future growth/configuration.
@@ -69,16 +65,13 @@ SubscribeStatus subscribe(laneID_t laneID, uint32_t subscriberID);
 - `PublishResult::Status` says whether publish succeeded or the lane was full.
 - `PublishResult::Credit` reports remaining lane capacity after the publish
   attempt.
-- `receive()` reads the next message for one subscriber and advances only that
-  subscriber's cursor.
+- `receive()` removes the oldest message from a lane when available and returns
+  `ReceiveResult`.
 - `receive()` creates a missing lane and returns
   `ReceiveStatus::LazyLaneCreated` with `PendingMessages == 0`.
 
-Each lane has one shared queue plus a bounded cursor position and messages-read
-count per subscriber.
-Multiple subscribers can independently read the same retained message.
-Queue-slot eviction is not implemented yet, so a full lane remains full even
-after subscribers have caught up.
+Each lane has one queue, so multiple receivers on the same lane compete for
+messages. A received message is removed and cannot be received again.
 
 ## Publish Results
 
@@ -110,10 +103,8 @@ capacity:
   was created for future messages.
 - `Status == ReceiveStatus::LaneEmpty` when the lane exists but has no queued
   messages.
-- `receive()` automatically registers the subscriber when its cursor does not
-  yet exist on the lane.
-- `PendingMessages` reports how many retained messages remain unread by the
-  requesting subscriber.
+- `PendingMessages` reports how many messages remain queued after a successful
+  receive.
 - `PendingMessages == 0` for lazy-created and empty-lane receive results.
 
 ## Repository Layout
@@ -122,7 +113,7 @@ capacity:
 - `niniBUS.cpp` - bus map lookup, lazy lane creation, and delegation.
 - `Lane.h` - lane API and lane-local queue state.
 - `Lane.cpp` - lane-local push/pop behavior.
-- `niniCFIFO.h` - header-only cursor-based circular FIFO template.
+- `niniFIFO.h` - header-only FIFO template.
 - `status.h` - publish and receive status/result types.
 - `Makefile` - builds the `niniBUS` static library.
 - `example/hello.cpp` - assert-based example tests.
@@ -208,16 +199,26 @@ make clean
 
 ## Hello Test Behavior
 
-`example/hello.cpp` uses `assert()` to check subscriber registration, automatic
-subscription, lazy lane creation, shared-message delivery, independent cursor
-advancement, subscriber-specific pending counts, catch-up behavior, and the
-capacity-one cursor edge case.
+`example/hello.cpp` uses `assert()` to check:
+
+- FIFO ordering.
+- Multiple lanes do not interfere.
+- Receive from an empty lane.
+- Publish to a non-existing lane.
+- Explicit lane creation with a custom capacity.
+- Duplicate creation without replacing the existing lane.
+- Default capacity for a lane created by `publish()`.
+- Lazy lane creation from `receive()`.
+- Lane credit.
+- Lane full behavior.
+- Receive pending-message counts.
+- FIFO wraparound and negative FIFO paths.
 
 ## Important Limitations
 
 - The bus is not thread-safe.
-- Queue-slot eviction is not implemented. Once a lane reaches capacity, it
-  remains full even after subscribers have read all retained messages.
+- There is no `subscribe()` API; lanes can be created explicitly with
+  `createLane()` or lazily by `publish()` and `receive()`.
 - Capacity is fixed for the lifetime of a lane. Calling `createLane()` for an
   existing ID does not resize or replace it.
 - Lane queue internals are private; callers interact through the bus API rather
