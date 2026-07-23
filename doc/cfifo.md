@@ -1,14 +1,23 @@
-# `cfifo` — Cursor FIFO
+# `nbus::cfifo` — Cursor FIFO
+
+> I am not perfect, and neither is my code. Please be gentle with both of us.
+> I do, however, come with tests, documentation, and a sincere desire not to
+> lose your messages unnecessarily.
 
 ## Overview
 
-`cfifo` means **Cursor FIFO**. It is a bounded, cursor-based message data
+`nbus::cfifo` means **Cursor FIFO**. It is a bounded, cursor-based message data
 structure that stores each message once in a shared circular buffer while
 allowing multiple registered subscribers to read the same message
 independently.
 
+Think of it as one bookshelf with several readers, each using a separate
+bookmark. This saves us from buying every reader an identical bookshelf,
+although the slowest readers may occasionally discover that the librarian
+needed the space back.
+
 ```text
-cfifo<T>
+nbus::cfifo<T>
 ├── Bounded circular buffer<T>
 ├── Global head sequence
 ├── Global tail sequence
@@ -24,7 +33,8 @@ message. Instead, each subscriber owns a cursor that identifies its next unread
 sequence.
 
 The implementation is currently single-threaded and uses a bounded, lossy
-slow-subscriber policy when a write reaches a full queue.
+slow-subscriber policy when a write reaches a full queue. That sentence is less
+cheerful than the bookshelf analogy, but regrettably more important.
 
 ## Design Intention
 
@@ -54,6 +64,8 @@ write(value);
 read(subscriber, output);
 ```
 
+Two verbs. No committee meeting required.
+
 It does not expose `push()`, `push_back()`, `front()`, or `pop_front()` because
 those names suggest a destructive, single-consumer FIFO model.
 
@@ -65,11 +77,27 @@ Include the header:
 #include "cfifo.h"
 ```
 
-Namespace-scope types:
+All Cursor FIFO public types are declared inside `namespace nbus`. Including
+the header does not add these names to the global namespace.
+
+The global namespace already has enough furniture. `cfifo` keeps its shoes in
+the `nbus` cupboard.
 
 ```cpp
+namespace nbus
+{
+// SizeType, SequenceType, CFIFOReadStatus, result types, and cfifo<T>.
+}
+```
+
+Namespace-level aliases:
+
+```cpp
+namespace nbus
+{
 using SizeType = std::uint32_t;
 using SequenceType = std::uint64_t;
+}
 ```
 
 Class aliases:
@@ -84,16 +112,32 @@ public:
 };
 ```
 
+Applications should normally use qualified names such as
+`nbus::cfifo<std::string>` and `nbus::CFIFOReadStatus`. A local `using`
+declaration is also valid when shorter names are desirable:
+
+```cpp
+using nbus::cfifo;
+using nbus::CFIFOReadStatus;
+```
+
 The subscriber ID and the sequence ID are different concepts:
 
 | Concept | Type | Meaning |
 |---|---|---|
 | Subscriber ID | `subscriber_type` | Identifies one registered reader. |
 | Sequence ID | `SequenceType` | Identifies one position in the global message stream. |
-| Size or count | `SizeType` | Capacity, retained size, credit, pending count, or skipped count. |
+| Bounded size or count | `SizeType` | Capacity, retained size, credit, or current pending count. |
+| Accumulated skipped count | `SequenceType` | Total cursor movement accumulated across reclaims before the next successful read. |
+
+The per-subscriber cursor representation is a private nested implementation
+type. It is not part of the public `nbus` API.
 
 Subscriber IDs do not need to resemble sequence IDs. For example, subscriber
 `5000` may read message sequence `2`.
+
+This is intentional. Asking subscriber 5000 to wait for sequence 5000 would be
+a remarkably patient but incorrect API.
 
 ## Required Properties Of `T`
 
@@ -116,6 +160,8 @@ copy-assignable. Empty strings and other values equal to their default value
 are valid messages; status values, not message contents, indicate whether a
 read succeeded.
 
+An empty string is still a message. Quiet messages deserve representation too.
+
 ## Construction
 
 ```cpp
@@ -125,7 +171,7 @@ explicit cfifo(SizeType capacity);
 Example:
 
 ```cpp
-cfifo<std::string> queue(16);
+nbus::cfifo<std::string> queue(16);
 ```
 
 Construction establishes:
@@ -145,7 +191,7 @@ A zero capacity throws `std::invalid_argument`:
 ```cpp
 try
 {
-    cfifo<int> invalid(0);
+    nbus::cfifo<int> invalid(0);
 }
 catch (const std::invalid_argument&)
 {
@@ -153,14 +199,20 @@ catch (const std::invalid_argument&)
 }
 ```
 
+Capacity validation occurs before the backing vector is constructed. This
+keeps invalid capacity handling in the member-initialization path.
+
 The constructor is `explicit`, so an integer cannot be silently converted into
 a `cfifo` object:
 
+This prevents `8` from waking up one morning and discovering it has become a
+message queue.
+
 ```cpp
-void consume(cfifo<int> queue);
+void consume(nbus::cfifo<int> queue);
 
 // consume(8);           // Rejected: no implicit conversion.
-consume(cfifo<int>(8));  // Explicit construction.
+consume(nbus::cfifo<int>(8));  // Explicit construction.
 ```
 
 ## Sequence Model
@@ -174,16 +226,24 @@ The tail sequence identifies the **next write position**. If the tail is `5`,
 the next successfully written message receives sequence ID `5`, and the tail
 then advances to `6`.
 
+The tail is always preparing the next seat. It never sits down itself.
+
 ### Cursor read sequence
 
 A subscriber cursor identifies that subscriber's **next unread message**. If a
 cursor is `3`, its next successful read returns sequence `3`, after which its
 cursor advances to `4`.
 
+It is a bookmark, not a time machine. Moving it forward is easy; asking for
+yesterday's page after reclamation is less successful.
+
 ### Head sequence
 
 The head sequence identifies the oldest sequence still retained by the current
 storage policy. It advances during reclamation, not on each read.
+
+The head moves only when storage pressure becomes persuasive. Until then, it
+enjoys a stable administrative position.
 
 ### Half-open sequence ranges
 
@@ -201,6 +261,8 @@ tail_sequence - cursor.read_sequence
 
 There is no `+1` because `tail_sequence` is the next empty write position, not
 an existing message.
+
+Off-by-one errors were invited to this section and politely shown the door.
 
 Example:
 
@@ -232,6 +294,9 @@ For capacity `3`:
 
 Sequence IDs continue increasing even when physical storage wraps around.
 
+The physical slots go in circles; the logical sequence keeps walking straight.
+This is healthier than it sounds.
+
 ## Public API Summary
 
 | API | Purpose |
@@ -247,6 +312,8 @@ Sequence IDs continue increasing even when physical storage wraps around.
 | `credit()` | Report unused shared-buffer slots. |
 | `size()` | Report retained shared-buffer slots. |
 | `capacity()` | Report configured capacity. |
+
+That is the entire public menu. The chef refuses to serve `pop_front()`.
 
 ## Cursor Registration
 
@@ -272,7 +339,7 @@ This means registration is **future-only**:
 Example:
 
 ```cpp
-cfifo<std::string> queue(4);
+nbus::cfifo<std::string> queue(4);
 
 queue.write("old");          // Sequence 0.
 queue.create_cursor(100);    // Cursor begins at tail sequence 1.
@@ -282,7 +349,7 @@ std::string message;
 auto result = queue.read(100, message);
 
 assert(result.status == CFIFOReadStatus::SUCCESS);
-assert(result.sequenceID == 1);
+assert(result.sequence_id == 1);
 assert(message == "new");
 ```
 
@@ -294,6 +361,9 @@ The return value is:
 | `false` | The ID was already registered. |
 
 Duplicate registration does not reset or change the existing cursor position.
+
+Calling twice is not a subscription renewal ceremony. The first bookmark stays
+exactly where it was.
 
 ### `contains_cursor()`
 
@@ -313,6 +383,9 @@ if (!queue.contains_cursor(100))
 This check is useful when a caller wants to avoid attempting duplicate
 registration. `create_cursor()` itself is already duplicate-safe.
 
+The check is courteous, not compulsory—like knocking before entering an empty
+conference room.
+
 ### `remove_cursor()`
 
 ```cpp
@@ -331,10 +404,12 @@ Removing a cursor:
 - Immediately prevents further reads using that subscriber ID.
 - Does not immediately change `head_sequence_`, `size()`, or `credit()`.
 - Excludes the cursor from the next reclamation decision.
-- Discards that subscriber's position and any pending `movedBy` report.
+- Discards that subscriber's position and any pending `skipped_messages` report.
 
 If the same ID is registered again later, it is a new cursor at the then-current
 tail. Its previous position is not restored.
+
+The re-registered subscriber gets a fresh start, not a season recap.
 
 ## Writing
 
@@ -347,33 +422,29 @@ CFIFOWriteResult write(const T& value);
 ```cpp
 struct CFIFOWriteResult
 {
-    CFIFOWriteStatus status;
-    SizeType credit;
+    SequenceType sequence_id{0};
+    SizeType credit{0};
 };
 ```
 
-Declared statuses:
+Both fields default to zero if an application default-constructs the result.
 
-```cpp
-enum class CFIFOWriteStatus
-{
-    SUCCESS,
-    Q_EMPTY,
-    Q_FULL,
-    FAILED
-};
-```
+`write()` has no status field because the current policy always creates space
+when the queue is full. Its result fields are:
 
-Current behavior:
-
-| Status | Current meaning |
+| Field | Meaning |
 |---|---|
-| `SUCCESS` | The message was stored and the tail advanced. |
-| `Q_EMPTY` | Returned only by the defensive branch where a full queue cannot be reclaimed. Current `reclaim()` paths return `true`, so this is not normally produced. |
-| `Q_FULL` | Declared but not currently returned by `write()`. In particular, a full queue with no registered cursors does **not** return `Q_FULL`; it reclaims all retained history and accepts the new value. |
-| `FAILED` | Reserved and not currently returned. |
+| `sequence_id` | The global sequence assigned to the written message. |
+| `credit` | The number of unused slots after the write. |
 
-`credit` reports unused slots after the operation:
+The returned sequence ID is the tail value before the tail advances. The first
+write returns sequence `0`, the second returns sequence `1`, and so on.
+Reclamation and physical-buffer wraparound do not reset the sequence.
+
+The numbers remain loyal even while physical slots are recycled with the
+enthusiasm of a bottle depot.
+
+`credit` is:
 
 ```cpp
 credit = capacity - size
@@ -385,9 +456,12 @@ When the queue is not full:
 
 1. Calculate `tail_sequence % capacity`.
 2. Assign the value to that physical slot.
-3. Increment the tail sequence.
-4. Increment retained size.
-5. Return `SUCCESS` and the remaining credit.
+3. Save the current tail as the written message's `sequence_id`.
+4. Increment the tail sequence.
+5. Increment retained size.
+6. Return the written sequence and remaining credit.
+
+Six steps on paper; one tiny adventure in the buffer.
 
 ### Write behavior when full
 
@@ -400,7 +474,10 @@ writing. Current reclamation always creates space in the supported states:
   sequence, then retain only the range still needed by more advanced cursors.
 
 The new message is written after reclamation and receives the old tail sequence
-as its `sequenceID`.
+as its `sequence_id`.
+
+The write always gets a seat. The seating arrangement for slow readers is where
+the plot becomes interesting.
 
 ## Reading
 
@@ -413,12 +490,15 @@ CFIFOReadResult read(subscriber_type id, T& output);
 ```cpp
 struct CFIFOReadResult
 {
-    CFIFOReadStatus status;
-    SizeType pendingMessage;
-    SequenceType sequenceID;
-    SizeType movedBy;
+    CFIFOReadStatus status{CFIFOReadStatus::NO_PENDING_MESSAGE};
+    SizeType pending_messages{0};
+    SequenceType sequence_id{0};
+    SequenceType skipped_messages{0};
 };
 ```
+
+The result is default-safe: its status defaults to
+`NO_PENDING_MESSAGE`, and all numeric fields default to zero.
 
 Declared statuses:
 
@@ -427,8 +507,7 @@ enum class CFIFOReadStatus
 {
     SUCCESS,
     NO_PENDING_MESSAGE,
-    NO_CURSOR,
-    FAILED
+    NO_CURSOR
 };
 ```
 
@@ -437,7 +516,8 @@ enum class CFIFOReadStatus
 | `SUCCESS` | One message was assigned to `output`, and the subscriber cursor advanced. |
 | `NO_PENDING_MESSAGE` | The cursor equals the tail and is caught up. |
 | `NO_CURSOR` | The subscriber ID is not registered. |
-| `FAILED` | Reserved and not currently returned. |
+
+No cursor, no message. The queue is organized, not psychic.
 
 ### Successful read
 
@@ -445,10 +525,10 @@ For a successful read:
 
 - `status` is `SUCCESS`.
 - `output` contains the message at the cursor's previous sequence.
-- `sequenceID` is that previous cursor sequence.
+- `sequence_id` is that previous cursor sequence.
 - The cursor advances by exactly one.
-- `pendingMessage` is calculated after the cursor advances.
-- `movedBy` reports the cursor's most recent reclamation skip, if any.
+- `pending_messages` is calculated after the cursor advances.
+- `skipped_messages` reports the cursor's most recent reclamation skip, if any.
 
 Example:
 
@@ -457,14 +537,17 @@ Before read:
 cursor = 4
 tail   = 7
 
-Read returns sequenceID = 4
+Read returns sequence_id = 4
 Cursor advances to      = 5
-pendingMessage          = 7 - 5 = 2
+pending_messages          = 7 - 5 = 2
 ```
 
-### `sequenceID`
+The arithmetic is intentionally dull. Dull arithmetic is dependable
+arithmetic.
 
-`sequenceID` identifies the logical message sequence returned by this specific
+### `sequence_id`
+
+`sequence_id` identifies the logical message sequence returned by this specific
 read. It is captured before the cursor increments.
 
 It is independent of:
@@ -475,31 +558,41 @@ It is independent of:
 - Number of times the circular buffer has wrapped.
 
 Different subscribers reading the same shared message receive the same
-`sequenceID`.
+`sequence_id`.
 
-### `pendingMessage`
+Shared truth, independent bookmarks, fewer duplicate objects—everyone wins
+except the memory allocator, which gets less attention.
 
-`pendingMessage` is cursor-specific. It reports how many currently available
+### `pending_messages`
+
+`pending_messages` is cursor-specific. It reports how many currently available
 messages remain for that subscriber after the successful read:
 
 ```cpp
-pendingMessage = tail_sequence - advanced_cursor_sequence;
+pending_messages = tail_sequence - advanced_cursor_sequence;
 ```
 
 It does not report global `size()` or global `credit()`.
 
-### `movedBy`
+`pending_messages` answers “How far behind am I?”, not “How crowded is the
+building?” Those are different anxieties.
 
-`movedBy` reports how many unread messages reclamation skipped when it advanced
+### `skipped_messages`
+
+`skipped_messages` reports how many unread messages reclamation skipped when it advanced
 this cursor directly to the tail:
 
 ```cpp
-movedBy = tail_sequence - old_cursor_sequence;
+skipped_messages = tail_sequence - old_cursor_sequence;
 ```
 
 The value is attached to the cursor until its next successful read. That read
 returns the value and clears the stored report. Later reads return zero unless
 another reclamation moves the cursor again.
+
+If multiple reclamations move the cursor before it successfully reads again,
+the skipped counts accumulate. `SequenceType` is used so cumulative logical
+movement is not restricted to the 32-bit bounded-capacity count type.
 
 Example:
 
@@ -509,29 +602,34 @@ cursor = 1
 tail   = 3
 
 Skipped sequences: 1 and 2
-movedBy:           3 - 1 = 2
+skipped_messages:           3 - 1 = 2
 ```
 
 After reclamation, the cursor is placed at sequence `3`. If a new write stores
 sequence `3`, the subscriber's next successful read returns that message with
-`sequenceID == 3` and `movedBy == 2`.
+`sequence_id == 3` and `skipped_messages == 2`.
 
-`movedBy` counts skipped messages, not messages previously read normally.
+`skipped_messages` counts skipped messages, not messages previously read
+normally. It is an apology counter, not a productivity score.
 
 ### Unsuccessful read behavior
 
 For `NO_CURSOR` and `NO_PENDING_MESSAGE`:
 
 ```text
-pendingMessage = 0
-sequenceID     = 0
-movedBy        = 0
+pending_messages = 0
+sequence_id     = 0
+skipped_messages        = 0
 ```
 
 The output argument is not modified.
 
-Sequence zero is a valid successful sequence. Always check `status` before
-interpreting `sequenceID`.
+`sequence_id` and `skipped_messages` are meaningful only when `status` is
+`SUCCESS`. Sequence zero is a valid successful sequence, so always inspect
+`status` before interpreting the numeric fields.
+
+Zero is doing two jobs here. Checking `status` is how we ask which hat it is
+wearing.
 
 ## Shared Queue State
 
@@ -550,11 +648,16 @@ progress.
 
 Returns the fixed number of physical buffer slots supplied to the constructor.
 
+Capacity is a promise, not a suggestion.
+
 ### `size()`
 
 Returns the number of retained shared slots according to the current head and
 tail policy. A read advances one cursor but does not immediately decrement
 global size.
+
+Reading alone does not make `size()` smaller. The queue cleans lazily and feels
+no shame about it.
 
 ### `credit()`
 
@@ -567,6 +670,9 @@ capacity() - size()
 Credit changes after writes and reclamation. It does not increase merely
 because one subscriber reads a message.
 
+One reader finishing a chapter does not make the shared bookshelf physically
+larger.
+
 ### `empty()`
 
 Returns whether global retained size is zero.
@@ -574,23 +680,41 @@ Returns whether global retained size is zero.
 This is not a cursor-specific caught-up check. The queue may be non-empty while
 a particular cursor has no pending messages.
 
+The room can contain books even when Alice has finished reading all of hers.
+
 ### `full()`
 
 Returns whether:
 
 ```cpp
-size() >= capacity()
+size() == capacity()
 ```
 
-In a valid state, size does not exceed capacity. The `>=` comparison is
-defensive: if bookkeeping were ever corrupted, it prevents an over-capacity
-state from appearing writable.
+The queue invariant requires `size()` never to exceed `capacity()`. Equality
+expresses that invariant directly and makes an accidental over-capacity state
+visible during testing instead of treating it as an ordinary full state.
+
+If `size()` somehow exceeds capacity, the queue has not become ambitious; an
+invariant has been broken.
 
 ## Reclamation Policy
+
+`cfifo` describes its reclaim policy this way:
+
+> I will write for you every time, but I hope you will not mind if you miss
+> something while reading.
+
+In less emotional and more technical language: writes are prioritized, storage
+is bounded, and the slowest subscribers may skip unread messages when the queue
+needs room. `skipped_messages` tells them exactly how much disappointment
+occurred.
 
 ### When reclamation runs
 
 Reclamation is lazy. It runs only when a write begins while the queue is full.
+It does not leap into action merely because somebody read a message; it waits
+until space is actually needed, much like a sensible person postponing garage
+cleaning.
 
 It does not run immediately when:
 
@@ -610,12 +734,14 @@ policy.
 
 When necessary, the slowest subscribers are advanced to the current tail and
 lose their unread backlog. Their next successful read reports the loss through
-`movedBy`.
+`skipped_messages`. The queue cannot return the missed messages, but at least it
+does not pretend nothing happened.
 
 ### Case 1: no registered cursors
 
 No subscriber can reference retained history, so all retained messages are
-reclaimed:
+reclaimed. Nobody was listening, so the queue tidies the room without filing an
+apology:
 
 ```text
 head = tail
@@ -629,14 +755,14 @@ size = 1
 credit = capacity - 1
 ```
 
-The write returns `CFIFOWriteStatus::SUCCESS`; it does not return `Q_FULL`.
-The global sequence does not reset. Only retained storage is cleared.
+The write completes and returns the new message's sequence ID and remaining
+credit. The global sequence does not reset. Only retained storage is cleared.
 
 ### Case 2: every cursor is at the tail
 
 The minimum cursor sequence equals the tail. Because it is the minimum, every
 other cursor must also be at the tail. No active subscriber needs an old
-message, so reclamation sets:
+message, so reclamation can clean everything with a clear conscience:
 
 ```text
 head = tail
@@ -647,13 +773,13 @@ The pending write then adds one retained message.
 
 ### Case 3: one or more cursors are behind
 
-Reclamation performs these steps:
+This is where feelings may be bruised. Reclamation performs these steps:
 
 1. Find a subscriber whose cursor has the smallest read sequence.
 2. Read that minimum sequence value.
 3. Find every cursor with that same minimum sequence.
 4. For each tied slow cursor:
-   - Record `tail - cursor` in `movedBy`.
+   - Record `tail - cursor` in `skipped_messages`.
    - Move the cursor to the current tail.
    - Mark the skip for one-time reporting.
 5. Find the new smallest cursor sequence.
@@ -664,6 +790,9 @@ Reclamation performs these steps:
 All cursors tied at the slowest position are moved in the same reclaim call.
 The unordered map's iteration order does not change the result because the
 policy matches and advances the entire tied group.
+
+Nobody can avoid reclamation by hiding in a tie. The policy has counted
+everyone.
 
 ### Why the minimum is found again
 
@@ -690,6 +819,9 @@ retained size before new write = 3 - 1 = 2
 Setting the head directly to the tail would incorrectly discard sequences `1`
 and `2`, which cursor C still needs.
 
+Rechecking the minimum is the queue's version of looking around before moving
+the furniture.
+
 ### Worked example: partially advanced subscriber
 
 Capacity is `2`:
@@ -705,7 +837,7 @@ cursor = 1
 size remains 2
 
 Write C triggers reclaim:
-movedBy = 2 - 1 = 1  // B is skipped
+skipped_messages = 2 - 1 = 1  // B is skipped
 cursor = 2
 head = 2
 size before C = 0
@@ -720,10 +852,13 @@ The subscriber's next read returns:
 
 ```text
 message        = C
-sequenceID     = 2
-movedBy        = 1
-pendingMessage = 0
+sequence_id     = 2
+skipped_messages        = 1
+pending_messages = 0
 ```
+
+Message B is gone, message C has arrived, and `skipped_messages` delivers the
+awkward but honest explanation.
 
 ### Worked example: tied slow cursors and one faster cursor
 
@@ -742,8 +877,8 @@ Writing D triggers reclamation:
 
 ```text
 A and B are tied at the minimum sequence 0.
-A.movedBy = 3 and A moves to 3.
-B.movedBy = 3 and B moves to 3.
+A.skipped_messages = 3 and A moves to 3.
+B.skipped_messages = 3 and B moves to 3.
 C remains at 1.
 
 New head = 1
@@ -759,7 +894,10 @@ credit = 0
 ```
 
 Cursor C can still read B and C before D. Cursors A and B next read D and each
-report `movedBy == 3`.
+report `skipped_messages == 3`.
+
+Cursor C kept up with the reading group. A and B receive the new chapter plus a
+brief incident report.
 
 ### Worked example: all cursors tied at the head
 
@@ -784,7 +922,10 @@ size = 1
 credit = 2
 ```
 
-Both subscribers next receive sequence `3` with `movedBy == 3`.
+Both subscribers next receive sequence `3` with `skipped_messages == 3`.
+
+Nobody was singled out. This particular disappointment was distributed
+equally.
 
 ### Capacity-one behavior
 
@@ -797,7 +938,9 @@ Write latest → reclaim sequence 0, write sequence 1
 ```
 
 A subscriber that had not read sequence `0` next receives `latest` with
-`movedBy == 1`.
+`skipped_messages == 1`.
+
+A capacity-one queue is less a library and more a sticky note.
 
 ## Behavioral Invariants
 
@@ -834,6 +977,9 @@ size advances by one
 
 Subscriber IDs never participate in sequence arithmetic.
 
+This rule is worth repeating whenever an ID such as `5000` starts looking
+suspiciously mathematical.
+
 ## Complete Example
 
 ```cpp
@@ -845,10 +991,10 @@ Subscriber IDs never participate in sequence arithmetic.
 
 int main()
 {
-    cfifo<std::string> queue(3);
+    nbus::cfifo<std::string> queue(3);
 
-    constexpr cfifo<std::string>::subscriber_type alice = 100;
-    constexpr cfifo<std::string>::subscriber_type bob = 200;
+    constexpr nbus::cfifo<std::string>::subscriber_type alice = 100;
+    constexpr nbus::cfifo<std::string>::subscriber_type bob = 200;
 
     assert(queue.create_cursor(alice));
     assert(queue.create_cursor(bob));
@@ -856,33 +1002,34 @@ int main()
     auto firstWrite = queue.write("first");
     auto secondWrite = queue.write("second");
 
-    assert(firstWrite.status == CFIFOWriteStatus::SUCCESS);
+    assert(firstWrite.sequence_id == 0);
     assert(firstWrite.credit == 2);
-    assert(secondWrite.status == CFIFOWriteStatus::SUCCESS);
+    assert(secondWrite.sequence_id == 1);
     assert(secondWrite.credit == 1);
 
     std::string message;
 
     auto aliceFirst = queue.read(alice, message);
-    assert(aliceFirst.status == CFIFOReadStatus::SUCCESS);
-    assert(aliceFirst.sequenceID == 0);
-    assert(aliceFirst.pendingMessage == 1);
-    assert(aliceFirst.movedBy == 0);
+    assert(aliceFirst.status == nbus::CFIFOReadStatus::SUCCESS);
+    assert(aliceFirst.sequence_id == 0);
+    assert(aliceFirst.pending_messages == 1);
+    assert(aliceFirst.skipped_messages == 0);
     assert(message == "first");
 
     // Bob independently reads the same shared message and sequence.
     auto bobFirst = queue.read(bob, message);
-    assert(bobFirst.status == CFIFOReadStatus::SUCCESS);
-    assert(bobFirst.sequenceID == 0);
+    assert(bobFirst.status == nbus::CFIFOReadStatus::SUCCESS);
+    assert(bobFirst.sequence_id == 0);
     assert(message == "first");
 
     auto aliceSecond = queue.read(alice, message);
-    assert(aliceSecond.status == CFIFOReadStatus::SUCCESS);
-    assert(aliceSecond.sequenceID == 1);
+    assert(aliceSecond.status == nbus::CFIFOReadStatus::SUCCESS);
+    assert(aliceSecond.sequence_id == 1);
     assert(message == "second");
 
     auto aliceCaughtUp = queue.read(alice, message);
-    assert(aliceCaughtUp.status == CFIFOReadStatus::NO_PENDING_MESSAGE);
+    assert(aliceCaughtUp.status ==
+           nbus::CFIFOReadStatus::NO_PENDING_MESSAGE);
 
     std::cout << "Cursor FIFO example passed.\n";
     return 0;
@@ -896,6 +1043,9 @@ g++ -std=c++17 -O2 -Wall -Wextra -I. example/cfifo_test.cpp -o cfifo_test
 ./cfifo_test
 ```
 
+If the example passes, the queue is pleased. It remains emotionally neutral
+about compiler optimization levels.
+
 Or use the example Makefile:
 
 ```bash
@@ -907,28 +1057,25 @@ make cfifo-test
 
 ```cpp
 std::string message;
-CFIFOReadResult result = queue.read(alice, message);
+nbus::CFIFOReadResult result = queue.read(alice, message);
 
 switch (result.status)
 {
-case CFIFOReadStatus::SUCCESS:
-    std::cout << "sequence=" << result.sequenceID
-              << " skipped=" << result.movedBy
-              << " pending=" << result.pendingMessage
+case nbus::CFIFOReadStatus::SUCCESS:
+    std::cout << "sequence=" << result.sequence_id
+              << " skipped=" << result.skipped_messages
+              << " pending=" << result.pending_messages
               << " message=" << message << '\n';
     break;
 
-case CFIFOReadStatus::NO_PENDING_MESSAGE:
+case nbus::CFIFOReadStatus::NO_PENDING_MESSAGE:
     std::cout << "subscriber is caught up\n";
     break;
 
-case CFIFOReadStatus::NO_CURSOR:
+case nbus::CFIFOReadStatus::NO_CURSOR:
     std::cout << "subscriber is not registered\n";
     break;
 
-case CFIFOReadStatus::FAILED:
-    std::cout << "reserved read failure\n";
-    break;
 }
 ```
 
@@ -944,7 +1091,7 @@ Let `S` be the number of registered subscribers.
 | `read()` | Expected `O(1)` | One unordered-map lookup and one assignment. |
 | `create_cursor()` | Expected `O(1)` | May rehash the unordered map. |
 | `contains_cursor()` | Expected `O(1)` | Unordered-map lookup. |
-| `remove_cursor()` | Expected `O(1)` | Lookup followed by erase. |
+| `remove_cursor()` | Expected `O(1)` | One key-based erase. |
 | State accessors | `O(1)` | Direct arithmetic or member access. |
 
 The shared message-storage cost is `O(capacity)`. Cursor metadata costs `O(S)`.
@@ -952,6 +1099,8 @@ Messages are not duplicated per subscriber.
 
 The `O(1)` unordered-map operations are average/expected complexity; worst-case
 hash-table behavior can be linear.
+
+Complexity notation is where the jokes become asymptotically less frequent.
 
 ## Thread Safety
 
@@ -973,6 +1122,8 @@ Use external locking if a `cfifo` instance must be shared across threads. No
 internal locks, atomics, memory-ordering guarantees, or lock-free behavior are
 currently provided.
 
+In short: bring a mutex. Optimism is not a synchronization primitive.
+
 ## Error And Exception Behavior
 
 - Zero capacity throws `std::invalid_argument`.
@@ -989,28 +1140,39 @@ currently provided.
 The API does not currently define a general exception-safety guarantee for
 user-defined `T` types whose assignment operations throw.
 
-## Current Limitations And Explicit Non-Goals
+If `T` throws during assignment, `cfifo` will not attempt couples counseling
+between your type and the standard library.
 
-- The implementation is not thread-safe.
-- Reclamation is lossy for the slowest subscribers.
-- There is no lossless backpressure mode.
-- There is no blocking read or blocking write.
-- There is no timeout API.
-- There is no cursor-specific `pending(id)` inspection API.
-- There is no retained-history registration mode; new cursors always start at
-  the current tail.
-- Cursor removal does not trigger immediate reclamation.
-- Subscriber IDs cannot currently be configured to another type.
-- Allocator customization is not exposed.
-- Move-only, non-default-constructible message types are not supported by the
-  current storage and assignment approach.
-- Sequence-number overflow behavior is not defined.
-- Serialization and persistence are not provided.
-- The class does not provide iterators or STL container compatibility.
-- `Q_FULL` and `FAILED` write statuses are declared but not currently emitted.
-- `FAILED` read status is declared but not currently emitted.
-- `Q_EMPTY` is present in the write status enum and is only associated with a
-  defensive reclaim-failure branch; normal current reclaim paths succeed.
+## Current Limitations And Small Disappointments
+
+Every data structure has dreams larger than its current implementation.
+`cfifo` is no exception. Please lower your expectations gently:
+
+- It is not thread-safe yet. Multiple threads must bring their own lock and,
+  ideally, agree about who is holding it.
+- Reclamation is lossy for the slowest subscribers. The queue favors fresh
+  writes and sends an honest `skipped_messages` count with the next successful
+  read.
+- There is no lossless backpressure mode. The queue will not ask a publisher
+  to sit quietly and reconsider its life choices.
+- There is no blocking read, blocking write, or timeout API. It is a data
+  structure, not a waiting room.
+- There is no cursor-specific `pending(id)` inspection API. For now, a read
+  result is the source of truth.
+- There is no retained-history registration mode. New cursors begin at the
+  current tail, so late arrivals do not receive a dramatic recap.
+- Removing a cursor does not reclaim immediately. Cleanup waits until a later
+  full-queue write actually needs space.
+- Subscriber IDs cannot currently use a configurable type.
+- Allocator customization is not exposed; the standard allocator has the job.
+- Move-only or non-default-constructible message types are not supported by the
+  current vector-and-assignment storage model.
+- Sequence-number overflow behavior is not defined. A 64-bit sequence provides
+  a very long runway, but infinity was outside the milestone.
+- Serialization and persistence are not provided. Restarting the process is
+  not a memory test the queue can pass.
+- Iterators and STL container compatibility are intentionally absent. `cfifo`
+  admires the STL without trying to impersonate it.
 
 ## Test Coverage
 
@@ -1022,17 +1184,21 @@ The example test executable currently covers:
 - Future-only late registration.
 - Multiple subscribers reading the same shared messages.
 - Normal sequence IDs across independent cursors.
+- Sequence IDs returned by writes before and after reclamation.
 - Full-queue reclamation without subscribers.
 - Cursor removal and duplicate removal.
 - Empty strings as valid messages.
 - Bounded size and credit after reclamation.
-- One-time `movedBy` reporting.
+- One-time `skipped_messages` reporting.
+- Accumulation across multiple reclaims before a successful read.
 - Sequence IDs after reclamation.
 - Preservation of a more advanced cursor.
 - Reclamation when every cursor is caught up.
 - Repeated reclamation and physical wraparound.
+- Logical write sequence IDs across physical buffer wraparound.
 - Capacity-one reclamation.
 - Removal of the slowest cursor before reclamation.
+- Removal and future-only re-registration at the current tail.
 - Separation of subscriber IDs and sequence IDs.
 - Reclamation of every cursor tied at the head.
 - Preservation of an advanced cursor while tied slow cursors are moved.
@@ -1044,14 +1210,15 @@ cd example
 make cfifo-test
 ```
 
+The tests are not proof of perfection—the opening paragraph already confessed
+to that—but they are substantially better than hopeful staring.
+
 ## Policy Summary
 
 The defining behavior of the current `cfifo` is:
 
-> Store each message once in a bounded shared circular buffer. Let registered
-> subscribers advance independently through global sequence IDs. Register new
-> subscribers at the current tail. When a full queue needs space, discard all
-> history if nobody needs it; otherwise advance every subscriber tied at the
-> oldest cursor to the tail, report its skipped count on its next successful
-> read, preserve any history still needed by more advanced subscribers, and
-> write the newest message.
+> I will store each message once and let every registered subscriber keep its
+> own place. I will welcome late subscribers at the current tail. I will keep
+> writing when the buffer fills, although the slowest readers may miss a few
+> chapters. If that happens, I will report the exact number through
+> `skipped_messages`. I may be bounded and imperfect, but at least I am honest.
