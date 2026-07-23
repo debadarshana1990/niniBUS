@@ -12,6 +12,7 @@ using SequenceType = std::uint64_t;
 enum class CFIFOWriteStatus
 {
     SUCCESS,
+    Q_EMPTY,
     Q_FULL,
     FAILED  //kept for futur
 };
@@ -31,8 +32,9 @@ struct CFIFOWriteResult
 struct CFIFOReadResult
 {
     CFIFOReadStatus status;
-    SizeType movedBy;
     SizeType pendingMessage;
+    SequenceType sequenceID;
+    SizeType movedBy;
 };
 //cursor
 struct cursor
@@ -60,7 +62,7 @@ class cfifo
         head_sequence_(0),
         tail_sequence_(0)
         {
-            if (capacity == 0)
+            if (capacity <= 0)
             {
                 throw std::invalid_argument("cfifo capacity must be greater than zero");
             }
@@ -69,7 +71,7 @@ class cfifo
         CFIFOWriteResult write(const T& val)
         {
             if(full() && !reclaim())
-                return { CFIFOWriteStatus::Q_FULL, 0};
+                return { CFIFOWriteStatus::Q_EMPTY, 0}; //reclaim failed means there is data in Q., for future cases
             const SizeType write_index = static_cast<SizeType>(tail_sequence_ % capacity_);
             buffer_[write_index] = val;
             tail_sequence_++;
@@ -84,22 +86,24 @@ class cfifo
             auto it = cursor_map_.find(idx);
 
             if (it == cursor_map_.end())
-                return {CFIFOReadStatus::NO_CURSOR,0, 0};
+                return {CFIFOReadStatus::NO_CURSOR, 0, 0, 0};
             if(caught_up(it->second.read_sequence))
-                return { CFIFOReadStatus::NO_PENDING_MESSAGE,0,0};
+                return {CFIFOReadStatus::NO_PENDING_MESSAGE, 0, 0, 0};
 
             auto& readCursor = it->second;
             SequenceType& readSeq = readCursor.read_sequence;
             const SequenceType read_index = static_cast<SizeType> (readSeq % capacity_);
             msg = buffer_[read_index];
+            const SequenceType sequenceID = readSeq;
             readSeq++;
             CFIFOReadResult ret;
-            ret.movedBy = readCursor.movedBy;
             ret.pendingMessage = pending(readSeq);
+            ret.sequenceID = sequenceID;
+            ret.movedBy = readCursor.movedBy;
             ret.status = CFIFOReadStatus::SUCCESS;
             if(readCursor.was_reclaimed)
             {
-                readCursor.was_reclaimed = true;
+                readCursor.was_reclaimed = false;
                 readCursor.movedBy = 0;
             }
             return ret;
@@ -161,25 +165,49 @@ class cfifo
             //the cursor value of the idx will go to tail_seq , which will now recive the latest data
             // old thing should not last forever. whats the point reading the old value, if world has moved beyond
 
+            //if no subscriber <cursor>, which means we claim safely move head to tail
             if (cursor_map_.empty())
-                return false;
-
-            while (size_ >= capacity_)
             {
-                auto minIdx = get_slowest_cursor_id();
-                auto& minCursor = cursor_map_.at(minIdx);
+                 head_sequence_ = tail_sequence_;
+                 size_ = 0;
+                 return true;
+             }
 
-                minCursor.movedBy = static_cast<SizeType>(
-                    tail_sequence_ - minCursor.read_sequence);
-                minCursor.read_sequence = tail_sequence_;
-                minCursor.was_reclaimed = true;
 
-                auto nextMinIdx = get_slowest_cursor_id();
-                head_sequence_ = cursor_map_.at(nextMinIdx).read_sequence;
-                size_ = static_cast<SizeType>(
-                    tail_sequence_ - head_sequence_);
+            // 1. get the minCur ,if cursor is at tailindex, claim everything
+             subscriber_type minSub = get_slowest_cursor_id();
+             auto minCur = cursor_map_.at(minSub).read_sequence;
+
+
+            if (minCur == tail_sequence_)
+            {
+                // claim everything
+                head_sequence_ = tail_sequence_;
+                size_ = 0;
+                return true;
             }
-
+            //2. get the minimum cursor anf find if all other cursor at same location, move there cursor to tail_sequence
+            // and update the movedBy from current readseq to tailseq  and current cursor to tailsequence ,which is the latest
+            for (auto& [id, cursor] : cursor_map_)
+            {
+                if ( cursor.read_sequence == minCur)
+                {
+                    // read_sequence is the next unread message and
+                    // tail_sequence_ is the next write position. Therefore,
+                    // [read_sequence, tail_sequence_) contains exactly this
+                    // many skipped messages; no +1 is required.
+                    cursor.movedBy = static_cast<SizeType>(
+                        tail_sequence_ - cursor.read_sequence);
+                    cursor.read_sequence = tail_sequence_;
+                    cursor.was_reclaimed = true;
+                }
+            }
+            //get the next miimum cursor and move my head sequence to readseq -1 ,menas claim till it and update the size
+            subscriber_type nextMinSub = get_slowest_cursor_id();
+            auto nextMinCur = cursor_map_.at(nextMinSub).read_sequence;
+            head_sequence_ = nextMinCur;
+            size_ = static_cast<SizeType>(
+                tail_sequence_ - head_sequence_);
             return true;
         }
 
