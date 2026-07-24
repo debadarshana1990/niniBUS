@@ -129,34 +129,35 @@ communication path. Applications assign meaning to lane IDs.
 
 ```cpp
 PublishResult publish(laneID_t laneID, const std::string& message);
-ReceiveResult receive(laneID_t laneID, std::string& message);
+ReceiveResult receive(laneID_t laneID,
+                      subscribeID_t subscriberID,
+                      std::string& message);
 CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
+SubscribeResult subscribe(laneID_t laneID, subscribeID_t subscriberID);
 ```
 
 **Rationale**:
 
 - `publish()` is the familiar operation for adding data to a bus, and now
-  returns both publish status and remaining lane credit.
+  returns remaining lane credit and the assigned sequence ID.
 - `receive()` clearly communicates destructive FIFO consumption and returns a
-  `ReceiveResult` so callers can distinguish success, empty lane, lazy lane
-  creation, and pending messages after a successful pop.
+  `ReceiveResult` so callers can distinguish success, no pending message, and
+  missing topology.
 - `createLane()` supports applications that need a known per-lane capacity
   before the first message is published.
-- A separate `subscribe()` function is not required right now because
-  `receive()` already lazily creates missing lanes.
-- Removing `subscribe()` avoids an API that only duplicates lane creation
-  behavior without tracking real subscribers.
+- `publish()` deliberately creates a missing lane with
+  `DEFAULT_LANE_CAPACITY` for convenient default topology.
+- `subscribe()` explicitly registers subscriber cursors and fails when its lane
+  does not exist.
 
 **Consequences**:
 
 - The API is small and direct.
-- Publishers can react to `PublishStatus::LaneFull`.
 - Publishers can read `PublishResult::Credit` without separately querying lane
   internals.
 - Receivers can read `ReceiveResult::PendingMessages` without separately
   querying lane internals.
-- There is no subscription registry, callback registration, or subscriber
-  identity tracking in the current API.
+- `receive()` never creates a lane or subscriber.
 
 **Revisit when**:
 
@@ -318,7 +319,8 @@ uint32_t credit() const;
 **Consequences**:
 
 - `Lane.cpp` owns the implementation of `push()` and `pop()`.
-- `niniBUS.cpp` owns lane lookup, lazy lane creation, and delegation.
+- `niniBUS.cpp` owns lane lookup, publish-side lazy lane creation, and
+  delegation.
 - The root Makefile compiles `niniBUS.cpp` and `Lane.cpp` into
   `libniniBUS.a`.
 
@@ -332,7 +334,8 @@ uint32_t credit() const;
 **Status**: accepted
 
 **Decision**: keep `niniBUS::publish()` and `niniBUS::receive()` boring:
-find or create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
+publish finds or creates its lane before delegating to `lane_t::push()`;
+receive only finds an existing lane before delegating to `lane_t::pop()`.
 
 **Rationale**:
 
@@ -352,8 +355,8 @@ find or create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
 **Current implementation note**:
 
 - `receive()` already delegates queue behavior to `lane_t::pop()`.
-- `publish()` delegates capacity checks, queue mutation, credit calculation, and
-  publish status to `lane_t::push()`.
+- `publish()` delegates capacity checks, queue mutation, and credit calculation
+  to `lane_t::push()`.
 
 **Revisit when**:
 
@@ -362,25 +365,25 @@ find or create the lane, then delegate to `lane_t::push()` or `lane_t::pop()`.
 
 ## DD-011 - Lazy Lane Creation
 
-**Status**: accepted
+**Status**: accepted for publish; receive-side behavior superseded by DD-024
 
-**Decision**: keep lazy lane creation when lanes are first published to or
-received from, while also allowing explicit creation through `createLane()`.
+**Decision**: publishing to a missing lane lazily creates it with
+`DEFAULT_LANE_CAPACITY`. Callers that require a specific capacity create the
+lane first with `createLane()`.
 
 **Rationale**:
 
-- Callers do not need a separate setup phase.
+- Default-capacity publishers do not need a separate setup phase.
 - Callers that need a custom capacity can create the lane explicitly.
 - Publishing to a new lane works immediately.
-- Receiving from a missing lane prepares the lane for future messages.
-- `receive()` uses `try_emplace(laneID)` so the returned `inserted` flag tells
-  whether the lane was just created.
+- `subscribe()` still requires an existing lane.
+- `receive()` creates neither missing lanes nor missing subscribers.
 
 **Consequences**:
 
-- Missing-lane receive normally returns `ReceiveStatus::LazyLaneCreated`.
-- Lazy lanes use `DEFAULT_LANE_CAPACITY`.
-- The old `find()` plus separate creation path is avoided.
+- Publish-created lanes use `DEFAULT_LANE_CAPACITY`.
+- Missing-lane subscription returns `SubscribeStatus::LaneNotExist`.
+- Missing-lane receive returns `ReceiveStatus::NO_CURSOR`.
 
 **Revisit when**:
 
@@ -391,24 +394,20 @@ received from, while also allowing explicit creation through `createLane()`.
 
 **Status**: current
 
-**Decision**: `publish()` and `receive()` return result structs containing a
-status plus operation-specific queue state.
+**Decision**: `publish()` and `receive()` return result structs containing
+operation-specific queue state. Receive results also contain a status because
+receive has multiple possible outcomes.
 
 ```cpp
-enum class PublishStatus {
-    Ok,
-    LaneFull
-};
-
 struct PublishResult {
     uint32_t Credit;
-    PublishStatus Status;
+    sequenceId_t sequenceID;
 };
 
 enum class ReceiveStatus {
-    Ok,
-    LaneEmpty,
-    LazyLaneCreated
+    SUCCESS,
+    NO_PENDING_MESSAGE,
+    NO_CURSOR
 };
 
 struct ReceiveResult {
@@ -419,13 +418,13 @@ struct ReceiveResult {
 
 **Rationale**:
 
-- Explicit statuses describe outcomes better than plain `bool`.
-- `publish()` needs to report both success/failure status and remaining lane
-  credit.
+- Explicit receive statuses describe outcomes better than plain `bool`.
+- `publish()` always accepts a message under the write-prioritized reclaim
+  policy, so it has no status field.
 - `receive()` needs to report both receive status and the number of messages
   still pending after a successful pop.
-- `receive()` can distinguish success, empty lane, and lazy lane creation.
-- Bounded lanes use `PublishStatus::LaneFull`.
+- `receive()` can distinguish success, no pending message, and missing
+  topology.
 
 **Consequences**:
 
@@ -531,7 +530,7 @@ In the current implementation, credit is returned after `publish()`:
 ```cpp
 struct PublishResult {
     uint32_t Credit;
-    PublishStatus Status;
+    sequenceId_t sequenceID;
 };
 ```
 
@@ -549,7 +548,7 @@ struct PublishResult {
 
 - Each lane has a capacity.
 - `PublishResult::Credit` reports remaining capacity after a publish attempt.
-- Publishing to a full lane returns `PublishStatus::LaneFull`.
+- Publishing to a full lane reclaims space and accepts the message.
 - Credit currently changes after publish and receive operations, but only
   `publish()` returns the credit value.
 - The queue implementation remains hidden from API users.
@@ -603,11 +602,6 @@ especially when API return types or ownership models change.
 - The project adds generated API docs.
 - The public API stabilizes enough for formal versioned documentation.
 
-## Open Decisions
-
-- Should missing-lane receive create a lane, or should it return a strict
-  not-found result?
-
 ## Design Philosophy
 
 `niniBUS` should remain:
@@ -642,15 +636,15 @@ details belong inside the `lane_t` implementation.
 - Push and pop are lane-local operations, not bus-routing operations.
 - Keeping push/pop isolated means future queue changes should mostly touch
   `lane_t`, not `niniBUS`.
-- `niniBUS` should remain responsible for lane lookup, lazy lane creation, and
-  API-level routing by lane ID.
+- `niniBUS` should remain responsible for lane lookup, publish-side lazy lane
+  creation, and API-level routing by lane ID.
 - Capacity, size, credit, and queue content are lane internals. The bus should
   not depend on those details.
 
 **Consequences**:
 
 - `lane_t::push()` owns publish-side lane behavior: capacity checks, queue
-  mutation, credit calculation, and publish status.
+  mutation, and credit calculation.
 - `lane_t::pop()` owns receive-side lane behavior: empty-queue checks, output
   message mutation, FIFO removal, pending-message calculation, and receive
   status.
@@ -677,8 +671,8 @@ stored, credited, or removed from a lane, make that change in `lane_t`.
 
 **Status**: accepted
 
-**Decision**: use `std::unordered_map::try_emplace()` for both lazy and explicit
-lane creation.
+**Decision**: use `std::unordered_map::try_emplace()` for publish-side lazy
+creation and explicit lane creation. Receive and subscribe use lookup only.
 
 Current publish-side pattern:
 
@@ -687,14 +681,14 @@ auto [it, inserted] = lane_map_.try_emplace(laneID);
 return it->second.push(message);
 ```
 
+The lane's default constructor uses `DEFAULT_LANE_CAPACITY`.
+
 Current receive-side pattern:
 
 ```cpp
-auto [it, inserted] = lane_map_.try_emplace(laneID);
-if (inserted)
-{
-    return {0, ReceiveStatus::LazyLaneCreated};
-}
+auto it = lane_map_.find(laneID);
+if (it == lane_map_.end())
+    return {ReceiveStatus::NO_CURSOR, 0, 0, 0};
 return it->second.pop(message);
 ```
 
@@ -707,12 +701,10 @@ return inserted ? CreateLaneStatus::Ok : CreateLaneStatus::LaneExists;
 
 **Rationale**:
 
-- Lazy lane creation is part of the current bus behavior.
+- Publish-side lazy lane creation is a deliberate convenience policy.
 - The bus needs an iterator to the stored lane so it can call `lane_t::push()`.
 - `try_emplace()` combines lookup and conditional insertion into one map
   operation.
-- In `receive()`, the `inserted` flag directly tells whether lazy lane creation
-  happened.
 - The older `find()` plus `operator[]` approach can search the map once to check
   for the lane, then search again to insert or access the missing lane.
 - `operator[]` also default-inserts a value before assignment, which can create
@@ -724,15 +716,16 @@ return inserted ? CreateLaneStatus::Ok : CreateLaneStatus::LaneExists;
 **Consequences**:
 
 - `publish()` stays short: find or create the lane, then call `push()`.
-- `receive()` no longer needs a separate `find()` followed by `subscribe()`.
 - Missing-lane creation avoids repeated map lookups.
 - The code avoids accidental `operator[]` default insertion in publish paths.
 - The `inserted` flag is available if future behavior needs to distinguish a
   newly created lane from an existing one.
+- `receive()` and `subscribe()` cannot accidentally create topology because
+  they use `find()`.
 
 **Revisit when**:
 
-- Lazy lane creation is removed.
+- Publish-side lazy lane creation is removed.
 - Lane construction needs policy arguments beyond capacity.
 - The map storage strategy changes away from `std::unordered_map`.
 
@@ -835,7 +828,7 @@ a capacity and stores it in a runtime `capacity_` member.
 
 **Consequences**:
 
-- `lane_t::push()` can map `FIFOStatus::FULL` to `PublishStatus::LaneFull`.
+- `lane_t::push()` can map the FIFO write result into `PublishResult`.
 - `lane_t::pop()` can use the FIFO state to map empty queues to
   `ReceiveStatus::LaneEmpty`.
 - FIFO callers have one consistent way to see mutation failure.
@@ -937,7 +930,8 @@ through `SkippedMessages` with that subscriber's next successful read.
 - Slow subscribers can lose unread messages.
 - Applications must inspect `SkippedMessages` when loss matters.
 - This is neither lossless delivery nor publisher backpressure.
-- Legacy `PublishStatus::LaneFull` is not emitted by the current write path.
+- `PublishResult` has no status because the current write path always accepts
+  the message.
 
 **Supersedes**:
 

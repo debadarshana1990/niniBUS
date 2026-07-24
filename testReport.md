@@ -21,7 +21,7 @@ The bus suite covers:
 - explicit lane creation;
 - invalid zero capacity;
 - duplicate lane creation without replacement;
-- publish-side lazy lane creation;
+- deliberate publish-side lazy lane creation with `DEFAULT_LANE_CAPACITY`;
 - publishing and receiving with sequence correlation;
 - subscriber registration;
 - subscription failure for missing lane;
@@ -40,8 +40,9 @@ The bus suite covers:
 - receive after unsubscribe;
 - resubscribe beginning at the new tail.
 
-These tests specifically protect the decision that receive never creates a
-lane or subscriber.
+These tests protect both topology policies: publish conveniently creates a
+missing default-capacity lane, while subscribe fails and receive creates
+neither lanes nor subscribers when topology is missing.
 
 ## cfifo Coverage
 

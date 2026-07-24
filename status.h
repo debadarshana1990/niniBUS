@@ -7,10 +7,6 @@ using laneID_t = uint32_t;
 using subscribeID_t = std::uint32_t;
 using sequenceId_t = std::uint64_t;
 
-enum class PublishStatus {
-    Ok,
-    LaneFull
-};
 enum class ReceiveStatus {
     SUCCESS,
     NO_PENDING_MESSAGE,
@@ -18,7 +14,6 @@ enum class ReceiveStatus {
 };
 struct PublishResult
 {
-    PublishStatus Status;
     uint32_t Credit;
     sequenceId_t sequenceID;
 };
@@ -44,5 +39,4 @@ enum class SubscribeStatus
 struct SubscribeResult
 {
     SubscribeStatus status;
-    sequenceId_t sequenceID;
-};
+    sequenceId_t startSequenceId;};

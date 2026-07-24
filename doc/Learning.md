@@ -74,6 +74,11 @@ decision is that receive does not create topology:
 
 This prevents innocent-looking reads from growing maps.
 
+Publish is intentionally different. Publishing to a missing lane creates it
+with `DEFAULT_LANE_CAPACITY` as a convenience. A caller that needs a specific
+capacity establishes the lane first with `createLane()`. Subscription remains
+strict and fails when the lane does not exist.
+
 ## Shared Empty Is Not Cursor Empty
 
 `cfifo::empty()` answers whether the shared retained range is empty. It does

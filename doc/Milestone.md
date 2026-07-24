@@ -137,7 +137,9 @@ restore the old cursor position.
 - `createLane()` explicitly creates a lane with caller-selected capacity.
 - Capacity zero is rejected.
 - Creating an existing lane does not replace or resize it.
-- `publish()` may lazily create a missing lane using the default capacity.
+- `publish()` deliberately lazily creates a missing lane using
+  `DEFAULT_LANE_CAPACITY`; callers use `createLane()` first when they require a
+  custom capacity.
 - `subscribe()` requires the lane to exist.
 - `receive()` never creates a missing lane or subscriber.
 - `unsubscribe()` never creates a missing lane.
@@ -222,7 +224,6 @@ Before v2.0.0 is released:
 
 - Complete API naming and result-type consistency review.
 - Resolve the intended return contract of `cfifo::create_cursor()`.
-- Decide whether the legacy `PublishStatus::LaneFull` value should remain.
 - Define behavior for logical sequence-number rollover.
 - Expand randomized and model-based reclaim testing.
 - Keep all public, design, learning, and test documentation synchronized.
@@ -236,6 +237,7 @@ Before v2.0.0 is released:
 - Reclaim behavior is deterministic and bounded.
 - Skipped reads are observable.
 - Receive never lazily creates topology.
+- Publish lazily creates a missing lane with `DEFAULT_LANE_CAPACITY`.
 - Public API types and their documented meanings agree.
 - All single-threaded tests pass from a clean build.
 

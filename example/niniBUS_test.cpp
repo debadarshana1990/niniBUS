@@ -53,7 +53,6 @@ void test_publish_and_receive_sequence()
     const auto second = bus.publish(20, "second");
     const auto third = bus.publish(20, "third");
 
-    assert(first.Status == PublishStatus::Ok);
     assert(first.sequenceID == 0);
     assert(first.Credit == 3);
     assert(second.sequenceID == 1);
@@ -212,7 +211,6 @@ void test_full_lane_without_subscribers_reclaims_history()
     assert(bus.publish(80, "B").sequenceID == 1);
 
     const auto newest = bus.publish(80, "C");
-    assert(newest.Status == PublishStatus::Ok);
     assert(newest.sequenceID == 2);
     assert(newest.Credit == 1);
 
@@ -271,7 +269,6 @@ void test_invalid_lane_creation_does_not_reserve_lane()
     assert(bus.subscribe(92, 920).status == SubscribeStatus::LaneNotExist);
     receive_and_expect(bus, 92, 920, message, ReceiveStatus::NO_CURSOR, 0);
     const auto published = bus.publish(92, "created-later");
-    assert(published.Status == PublishStatus::Ok);
     assert(published.sequenceID == 0);
     assert(published.Credit == DEFAULT_LANE_CAPACITY - 1);
     print_pass("invalid creation does not reserve or corrupt a lane ID");

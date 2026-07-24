@@ -70,6 +70,9 @@ the next message that subscriber would read.
 5. Store the message, assign a sequence ID, and return remaining credit.
 
 Publishing is the only operation that lazily creates a lane.
+This is a deliberate convenience policy: callers can publish immediately when
+the default capacity is suitable, or call `createLane()` first to configure a
+specific capacity.
 
 ### Subscribe
 

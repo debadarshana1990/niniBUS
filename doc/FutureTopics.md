@@ -5,7 +5,6 @@ single-threaded, bounded, write-prioritized cursor bus.
 
 ## API Consistency
 
-- Remove or repurpose `PublishStatus::LaneFull` if compatibility permits.
 - Define the intended meaning of `SubscribeResult::sequenceID` and make the
   implementation and name agree.
 - Consider separate receive statuses for missing lane and missing subscriber
