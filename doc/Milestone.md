@@ -1,626 +1,418 @@
 # niniBUS Milestone Roadmap
 
-This roadmap keeps the project focused. Each version should answer one
-engineering question and should not grow just because the next topic looks
-interesting.
+> **A deterministic, embedded-friendly message bus for C++ systems.**
 
-Current active milestone: V1.3 - Runtime Capacity and FIFO API Refinement.
+`niniBUS` is an in-process publish/subscribe library for systems programming,
+embedded software, simulators, and platform software where predictable
+behavior and explicit design matter more than feature count.
 
-## V0 - Basic Message Bus
+The project evolves incrementally. Each release focuses on one fundamental
+engineering problem before the next layer of complexity is introduced.
 
-Status: complete.
+---
 
-### Objective
+## Philosophy
 
-Build the simplest working in-process message bus.
+`niniBUS` follows these principles:
 
-### Features
+- Build from first principles.
+- Keep APIs small and explicit.
+- Favor deterministic and observable behavior.
+- Separate message transport from message execution.
+- Stabilize one design problem before adding another.
+- Record limitations instead of hiding them behind optimistic APIs.
 
-- Lane creation.
-- Publish.
-- Receive.
-- Lazy lane creation.
-- Basic status handling.
-- Initial example application.
-- Initial documentation.
-- Tagged release: `v0.0.0`.
+The bus moves messages. It does not own worker threads, schedule application
+work, or execute subscriber callbacks.
 
-### Engineering Question
+---
 
-Can I build a working in-process message bus with a simple API?
+## Current Status
 
-## V1 - Bounded and Predictable Message Bus
+| Version | Status | Theme |
+|---|---|---|
+| v1.0.0 | Released | Single publisher, single subscriber |
+| v2.0.0 | In Progress | Cursor-based broadcast messaging |
+| v3.0.0 | Planned | Thread-safe messaging |
+| v4.0.0 | Planned | Deterministic memory |
+| v5.0.0 | Planned | Inter-process communication |
 
-### V1.0 - Lane Separation and Basic Back Pressure
+---
 
-Status: complete.
+## v1.0.0 — Foundation
 
-### Objective
+### Theme
 
-Separate lane behavior from bus routing and make each lane bounded.
+> Establish a small, bounded, in-process message bus.
 
-### Features
+The first release established the core message-bus model.
 
-- Move lane implementation into `Lane.h` and `Lane.cpp`.
-- Keep `niniBUS` responsible only for lane lookup, lazy lane creation, routing,
-  and delegation.
-- Add bounded lane capacity.
-- Add `PublishResult`.
-- Add `PublishStatus::LaneFull`.
-- Add publisher credit.
-- Keep credit derived from:
+### Delivered
+
+- Lane abstraction.
+- Publish and receive operations.
+- Bounded message queues.
+- Explicit lane capacity.
+- Default capacity for publish-created lanes.
+- Credit-based capacity reporting.
+- Status-oriented result types.
+- Single-threaded behavior.
+- A static library and example-based tests.
+
+### Engineering Outcome
+
+v1 proved the basic ownership model:
 
 ```text
-capacity - current size
+niniBUS
+└── Lane Map
+    └── One bounded queue per lane
 ```
 
-- Remove unused publish statuses.
-- Keep lane size, capacity, and credit helpers private.
-- Add tests for lane capacity, publisher credit, full-lane rejection, publish
-  retry after receive, and lane independence.
+The original destructive FIFO behavior was sufficient for one consumer, but it
+could not allow several subscribers to consume the same message independently.
+That limitation motivated v2.
 
-### Definition Of Done
+---
 
-- Bus routing remains simple.
-- Lane owns queue behavior.
-- Full lanes reject new messages.
-- Credit reflects remaining queue space.
-- Full-lane behavior is tested.
-- Documentation is updated.
+## v2.0.0 — Broadcast Messaging
 
-### V1.1 - Custom Circular FIFO
+### Theme
 
-Status: complete.
+> One message. Multiple independent readers.
 
-### Objective
+v2 introduces broadcast delivery without creating a separate message queue for
+every subscriber.
 
-Replace the lane's direct STL queue usage with a project-owned circular FIFO.
+### Architecture
 
-### Features
+Each lane owns one shared `nbus::cfifo<std::string>`. The lane also maintains an
+independent cursor for every registered subscriber:
 
-- Add `niniFIFO<T>`.
-- Use `std::vector<T>` as internal storage.
-- Maintain `head_`, `tail_`, `size_`, and `capacity_`.
-- Implement STL-like APIs:
-  - `push_back()`
-  - `pop_front()`
-  - `front()`
-  - `empty()`
-  - `full()`
-  - `size()`
-  - `capacity()`
-- Add `FIFOStatus`:
-  - `SUCCESS`
-  - `FULL`
-  - `EMPTY`
-- Integrate `niniFIFO<std::string>` into `lane_t`.
-- Keep template implementation in the header.
-- Preserve STL-like separation between reading with `front()` and removing with
-  `pop_front()`.
-
-### Tests
-
-- Empty FIFO.
-- FIFO ordering.
-- Full FIFO.
-- Overflow rejection.
-- Pop from empty FIFO.
-- FIFO reuse after becoming empty.
-- Wraparound.
-- Repeated wraparound.
-- FIFO order after full-lane recovery.
-- Size correctness during push and pop.
-
-### Definition Of Done
-
-- Circular FIFO behavior is correct.
-- Wraparound is directly tested.
-- Full and empty behavior is tested.
-- Lane uses `niniFIFO`.
-- No `const_cast`.
-- No unnecessary `.cpp` file for the template.
-- Tests pass after a clean build.
-
-### V1.2 - V1 Cleanup and Completion
-
-Status: completed.
-
-### Objective
-
-Close the fixed-capacity portion of V1 before adding explicit lane creation.
-
-### Tasks
-
-The following list records the fixed-capacity V1.2 scope that was completed
-before V1.3 introduced runtime capacity:
-
-- Remove duplicate full checking from `lane_t::push()`.
-- Let `niniFIFO::push_back()` own full detection.
-- Translate `FIFOStatus::FULL` into `PublishStatus::LaneFull`.
-- Keep the current STL-like `front()` and `pop_front()` interface.
-- Keep the current fixed default capacity behavior.
-- Do not add runtime capacity configuration yet.
-- Remove unused includes.
-- Remove stale comments.
-- Clean naming and documentation.
-- Add a dedicated wraparound test.
-- Update the test report.
-- Mark the fixed-capacity V1.2 implementation complete.
-- Run:
-
-```bash
-make clean
-make
-
-make -C example clean
-make -C example test
+```text
+Lane
+├── Shared Message Storage
+└── Subscriber Cursor Map
+    ├── Subscriber A -> next read sequence
+    ├── Subscriber B -> next read sequence
+    └── Subscriber C -> next read sequence
 ```
 
-### Explicitly Deferred To V1.3
+A message is stored once. Every subscriber reads it through its own cursor.
+One subscriber reading a message does not consume it for another subscriber.
 
-- User-configurable runtime capacity.
-- Capacity constructor.
-- Capacity-one testing.
-- Zero-capacity validation.
-- Revisiting `front()` empty behavior.
-- Public naming cleanup for `size()` and `capacity()`.
+### Implemented Work
 
-### Definition Of Done
+- Define subscriber IDs.
+- Add `subscribe()` and `unsubscribe()`.
+- Maintain one shared cursor FIFO per lane.
+- Maintain subscriber-to-cursor state.
+- Initialize new cursors at the current tail.
+- Accept subscriber ID in `receive()`.
+- Advance only the requesting cursor during a normal successful read.
+- Allow multiple subscribers to receive the same message.
+- Return logical sequence IDs from publish and successful receive.
+- Report messages still pending for the requesting subscriber.
+- Detect and report messages skipped by reclamation.
+- Add deterministic bounded reclamation.
+- Add single-threaded bus and `cfifo` functional tests.
 
-- Existing V1 behavior is complete.
-- No known FIFO correctness issue remains.
-- Current API is stable.
-- Tests and documentation match the implementation.
-- V1.2 is committed and tagged.
+### Subscription Semantics
 
-### V1.3 - Runtime Capacity and FIFO API Refinement
+A new subscriber starts at the current tail:
 
-Status: implementation complete; pending merge and V1 tag.
-
-### Objective
-
-Complete the deferred FIFO API work before beginning V2 broadcast delivery.
-
-This is the final part of V1.
-
-### Features
-
-#### Runtime Capacity
-
-FIFO capacity is selected during construction:
-
-```cpp
-explicit niniFIFO(uint32_t capacity);
+```text
+messages published before registration -> not delivered
+messages published after registration  -> eligible for delivery
 ```
 
-Current bus API:
+Duplicate subscription does not reset or move the existing cursor.
 
-```cpp
-CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
+Unsubscribe removes the cursor from future delivery and reclaim decisions.
+Subscribing again creates a new cursor at the then-current tail; it does not
+restore the old cursor position.
+
+### Lane-Creation Semantics
+
+- `createLane()` explicitly creates a lane with caller-selected capacity.
+- Capacity zero is rejected.
+- Creating an existing lane does not replace or resize it.
+- `publish()` may lazily create a missing lane using the default capacity.
+- `subscribe()` requires the lane to exist.
+- `receive()` never creates a missing lane or subscriber.
+- `unsubscribe()` never creates a missing lane.
+
+The receive-path decision is deliberate. Receiving may advance an existing
+subscriber cursor, but it must not silently mutate bus topology. A wrong lane
+or subscriber ID therefore remains an observable `NO_CURSOR` result.
+
+### Write-Prioritization Policy
+
+v2 currently prioritizes writers:
+
+> A write will be accepted, but a slow reader may miss retained messages.
+
+When the shared queue is full, `cfifo` deterministically reclaims space:
+
+1. If no cursors are registered, retained history can be discarded.
+2. If every cursor is caught up, retained storage can be reset logically.
+3. Otherwise, find the oldest cursor position.
+4. Advance every cursor tied at that oldest position to the current tail.
+5. Accumulate the number skipped for each moved cursor.
+6. Recompute the retained head and size.
+7. Write the new message.
+
+Moving every cursor tied at the oldest position is necessary. Moving only one
+would leave another cursor at the same minimum, so no space would be released.
+
+### Reader Consequences
+
+This policy keeps memory bounded and prevents slow subscribers from blocking
+publishers, but it is intentionally lossy:
+
+- Slow subscribers can miss messages.
+- Loss is reported through `SkippedMessages`.
+- Skip counts accumulate across reclaim operations.
+- The accumulated count is returned with the subscriber's next successful
+  receive and then reset.
+- Applications requiring lossless delivery need a future backpressure policy.
+
+### Core Invariants
+
+```text
+retained size <= configured capacity
+credit == capacity - retained size
+one physical message copy per lane
+one independent cursor per registered subscriber
 ```
 
-`createLane()` now creates a lane with the requested capacity. Publishing or
-receiving on an unknown lane still creates it with `DEFAULT_LANE_CAPACITY`.
-Calling `createLane()` for an existing ID returns `LaneExists` and preserves the
-existing lane.
+Logical sequence numbers are separate from physical buffer indexes:
 
-#### Capacity Validation
-
-Capacity zero is invalid. `createLane()` returns
-`CreateLaneStatus::InvalidCapacity` without creating the lane or reserving its
-ID. Capacity one is the smallest valid lane capacity.
-
-#### Capacity Edge Cases
-
-Covered edge cases:
-
-- Capacity one, including full, receive, and reuse behavior.
-- Small custom capacities.
-- Zero-capacity rejection without lane creation.
-- Wraparound with a custom capacity of three.
-
-#### Public API Naming
-
-The FIFO inspection API is finalized with STL-style names:
-
-```cpp
-size()
-capacity()
+```text
+physical index = logical sequence % capacity
 ```
 
-#### `front()` Behavior Review
+This preserves message identity across circular-buffer wraparound.
 
-Keep the STL-like interface:
+### Current Test Coverage
 
-```cpp
-front()
-pop_front()
-```
+The v2 single-threaded tests cover:
 
-Calling `front()` on an empty FIFO throws `std::runtime_error`. This behavior is
-documented and covered by `test_fifo_empty_negative_paths()`.
+- lane creation and invalid capacity;
+- publish-side lazy lane creation;
+- missing lane and missing subscriber receives;
+- registration and duplicate registration;
+- future-only subscriber registration;
+- multiple independent subscribers;
+- sequence IDs and pending counts;
+- capacity-one behavior;
+- physical wraparound;
+- reclaim with no subscribers;
+- reclaim after all subscribers catch up;
+- tied and uneven slow subscribers;
+- skipped-message accumulation and one-time reporting;
+- unsubscribe, repeated unsubscribe, and missing targets;
+- receive after unsubscribe;
+- resubscription at the current tail;
+- bounded size and credit after repeated reclamation.
 
-Do not replace it with a combined read-and-pop API unless a concrete
-requirement appears.
+### Remaining v2 Work
 
-#### Lane Capacity Configuration
+Before v2.0.0 is released:
 
-`lane_t` accepts capacity during construction and passes it to `niniFIFO`.
-Explicit creation uses the capacity passed to `createLane()`; lazy creation by
-`publish()` or `receive()` uses `DEFAULT_LANE_CAPACITY`. Lane capacity is not
-changed after creation.
+- Complete API naming and result-type consistency review.
+- Resolve the intended return contract of `cfifo::create_cursor()`.
+- Decide whether the legacy `PublishStatus::LaneFull` value should remain.
+- Define behavior for logical sequence-number rollover.
+- Expand randomized and model-based reclaim testing.
+- Keep all public, design, learning, and test documentation synchronized.
+- Perform a clean build and run both example test suites.
 
-### Tests
+### v2 Definition of Done
 
-- Runtime capacity constructor. (covered)
-- Capacity = 1. (covered)
-- Zero-capacity policy. (zero is rejected with `InvalidCapacity`)
-- Custom-capacity full condition. (covered through `createLane()`)
-- Custom-capacity wraparound. (covered)
-- Size and capacity APIs. (covered)
-- Empty `front()` exception behavior. (covered)
-- Lane behavior with configured capacity. (covered)
+- Broadcast behavior is documented as a stable contract.
+- Multiple subscribers independently receive shared messages.
+- Subscriber lifecycle behavior is fully tested.
+- Reclaim behavior is deterministic and bounded.
+- Skipped reads are observable.
+- Receive never lazily creates topology.
+- Public API types and their documented meanings agree.
+- All single-threaded tests pass from a clean build.
 
-### Definition Of Done
+---
 
-- Runtime capacity is supported.
-- Invalid capacity behavior is defined.
-- Capacity = 1 is tested.
-- FIFO API names are finalized.
-- Empty `front()` behavior is documented.
-- Lane capacity configuration is clear.
-- V1 API is considered stable.
+## v3.0.0 — Concurrency
 
-## V1 Final State
+### Theme
 
-At the end of V1, `niniBUS` has:
+> Safe communication between threads.
 
-- Bounded lanes.
-- Custom circular FIFO.
-- Back pressure.
-- Publisher credit.
-- Full and empty status handling.
-- Runtime-configurable FIFO capacity.
-- Stable FIFO inspection APIs.
-- Documented empty-access behavior.
-- Direct FIFO tests.
-- Bus integration tests.
-- Wraparound tests.
-- Edge-case tests.
-- Updated design documentation.
-- Tagged V1 release.
+Concurrency will be added only after the single-threaded broadcast model and
+message-lifetime policy are stable.
 
-### Engineering Question
+### Phase 1
 
-Can I make the single-threaded bus bounded, predictable, reusable, and fully
-tested?
+- One publisher thread.
+- Multiple subscriber threads.
+- Safe subscriber cursor progress.
+- Safe subscription and unsubscribe lifecycle.
 
-## V2 - Broadcast Delivery Semantics
+### Phase 2
 
-### Objective
+- Multiple publisher threads.
+- Multiple subscriber threads.
+- Safe lane creation and lookup.
+- Defined ordering and progress guarantees.
 
-Evolve the V1 competing-consumer baseline to support intentional broadcast
-delivery to multiple subscribers per lane.
+### Research Areas
 
-### Features
+- Lock ownership and granularity.
+- Mutex-based reference implementation.
+- Atomic cursor or sequence state.
+- Memory ordering.
+- Subscriber removal during receive or reclaim.
+- Starvation and fairness.
+- Race-detector and stress testing.
 
-- Multi-subscriber support per lane.
-- Preserve and document the V1 competing-consumer behavior as the baseline.
-- Add a broadcast message model in which all current subscribers receive the
-  message.
-- Lane subscription management.
-- Subscriber lifecycle.
-- Message distribution strategy.
-- Backpressure with multiple subscribers.
+Correctness comes first. Mutexes, atomics, lock-free structures, or a hybrid
+will be selected from measured architectural needs rather than chosen in
+advance.
 
-### V2.1 - Design Exploration
+### v3 Definition of Done
 
-Status: not started.
+- Supported concurrency patterns are stated precisely.
+- Unsupported patterns fail review rather than remaining ambiguous.
+- Data-race-free behavior is verified with appropriate tooling.
+- Ordering, visibility, and progress guarantees are documented.
+- Single-threaded behavior remains compatible unless a breaking change is
+  explicitly announced.
 
-### Objective
+---
 
-Explore design patterns for multi-subscriber message delivery.
+## v4.0.0 — Deterministic Memory
 
-### Questions
+### Theme
 
-- Should competing and broadcast delivery both remain selectable modes?
-- Per-lane or per-subscriber buffers?
-- How to handle backpressure from slow subscribers?
-- Subscriber identification.
-- Subscription/unsubscription mechanism.
-- Message ownership and lifetime.
-- Resource management with multiple subscribers.
+> Predictable allocation for embedded and systems software.
 
-### V2.2 - TBD
+Possible work:
 
-Status: not started.
+- Custom allocator interface.
+- Fixed memory pools.
+- Caller-provided storage.
+- Bounded cursor registry.
+- Bounded message representation.
+- Zero-copy or reduced-copy publish.
+- No allocation after initialization.
+- Exact per-lane and per-subscriber memory measurements.
+- Defined allocation-failure behavior.
 
-### Objective
+### v4 Definition of Done
 
-Complete design decisions from V2.1 exploration.
+- Allocation points are known and documented.
+- Embedded configurations can bound memory consumption.
+- Failure behavior is explicit.
+- Performance and footprint claims are supported by measurements.
 
-### Tasks
+---
 
-- [ ] Decide on multi-subscriber modes
-- [ ] Design subscriber interface
-- [ ] Design buffer strategy
-- [ ] Design backpressure handling
-- [ ] Define API
+## v5.0.0 — Inter-Process Communication
 
-### Definition Of Done
+### Theme
 
-- Multi-subscriber design is complete and documented.
+> Extend the programming model beyond a single process.
 
-### Engineering Question
+The goal is to preserve the recognizable publish/subscribe model while allowing
+communication across process boundaries.
 
-Can `niniBUS` support multiple subscribers with predictable message delivery?
-
-## V3 - Thread-Safe Message Bus
-
-### Objective
-
-Support safe concurrent publishing and receiving.
-
-### Features
-
-- Mutex-based synchronization.
-- Thread-safe publish.
-- Thread-safe receive.
-- Multiple producers.
-- Multiple consumers.
-- Per-lane synchronization.
-- Bus-map synchronization.
-- Lock ownership documentation.
-- Lock ordering rules.
-- Contention measurements.
-- Thread-safety tests.
-
-### Questions
-
-- Global bus lock or per-lane lock?
-- When is the map lock required?
-- Can lane operations proceed independently?
-- How are lazy creation races handled?
-- What is the ownership model?
-- What happens when multiple consumers read one lane?
-
-### Tests
-
-- Multiple producers on one lane.
-- Multiple consumers on one lane.
-- Producers and consumers together.
-- Multiple independent lanes.
-- Lane creation races.
-- Full queue under contention.
-- Empty queue under contention.
-- Long-running stress test.
-
-### Definition Of Done
-
-- No data races under supported usage.
-- Synchronization contract is documented.
-- Mutex implementation is measured.
-- Contention bottlenecks are understood.
-- Correctness comes before optimization.
-
-### Engineering Question
-
-Can multiple threads use `niniBUS` safely?
-
-## V4 - Lock-Free FIFO Research
-
-### Objective
-
-Explore whether a lock-free queue meaningfully improves the system.
-
-### Features
-
-- Lock-free bounded FIFO prototype.
-- Atomic indexes or sequence counters.
-- Memory-ordering study.
-- Single-producer/single-consumer prototype.
-- Possible multi-producer/multi-consumer exploration.
-- Cache-line and false-sharing investigation.
-- ABA analysis where relevant.
-- Comparison with mutex implementation.
-- Correctness stress tests.
-- Throughput and latency benchmarks.
-
-### Important Rule
-
-The lock-free implementation is experimental until it is proven correct and
-performs better for a measured workload.
-
-### Questions
-
-- Is SPSC enough for a useful mode?
-- Is MPMC complexity justified?
-- Which memory ordering is required?
-- Does lock-free improve latency?
-- Does it improve throughput?
-- Does it make the code harder to maintain?
-- Is the mutex baseline already sufficient?
-
-### Definition Of Done
-
-- Lock-free prototype is documented.
-- Correctness assumptions are explicit.
-- Mutex and lock-free versions are compared.
-- Performance claims are backed by measurements.
-- A decision is made to adopt, retain as experimental, or reject it.
-
-### Engineering Question
-
-Can locks be removed without sacrificing correctness or maintainability?
-
-## V5 - Storage and Memory Management
-
-### Objective
-
-Separate FIFO behavior from memory ownership and make memory use predictable.
-
-### V5.0 - `niniStorage`
-
-### Features
-
-- Introduce `niniStorage`.
-- Move storage responsibility out of `niniFIFO`.
-- Initially use `std::vector` internally.
-- Expose only operations required by FIFO.
-- Keep FIFO algorithm independent of storage implementation.
-- Support runtime capacity through storage.
-
-### Goal
-
-FIFO should know how to manage queue state, not where the memory comes from.
-
-### V5.1 - `niniAllocator`
-
-### Features
-
-- Preallocated memory pool.
-- Block allocation.
-- Free and reclaim.
-- Contiguous storage allocation.
-- Fragmentation measurement.
-- Coalescing strategy if required.
-- Allocation failure behavior.
-- Memory ownership rules.
-- Leak detection tests.
-
-### Questions
-
-- Fixed-size blocks or variable-size blocks?
-- How are blocks reclaimed?
-- Is contiguous allocation required?
-- How much fragmentation occurs?
-- Should every lane own its storage?
-- Should the bus own a shared pool?
-
-### Measurements
-
-- Allocation latency.
-- Deallocation latency.
-- Memory overhead.
-- Fragmentation.
-- Lane memory footprint.
-- FIFO memory footprint.
-- Comparison with `std::vector`.
-
-### Definition Of Done
-
-- FIFO is independent of concrete storage.
-- Storage ownership is documented.
-- Allocation and reclamation are tested.
-- Memory usage is measured.
-- Failure behavior is defined.
-
-### Engineering Question
-
-Can `niniBUS` control and predict its own memory usage?
-
-## V6 - Inter-Process Communication
-
-### Objective
-
-Allow message exchange between processes.
-
-### Candidate Transports
-
-- Unix domain sockets.
-- TCP sockets.
-- Shared memory.
-
-### Features
+### Possible Work
 
 - Transport abstraction.
-- Message framing.
-- Serialization.
-- Deserialization.
-- Connection lifecycle.
-- Sender and receiver process examples.
-- Failure detection.
-- Reconnection policy.
-- Partial-read handling.
-- Partial-write handling.
-- Back pressure across transport boundaries.
-- IPC benchmarks.
+- Shared-memory or socket-based transport.
+- Serialization and schema versioning.
+- Process discovery and lifecycle.
+- Persistent sequence and cursor state.
+- Crash recovery.
+- Delivery acknowledgement and retry.
+- Security and access control.
 
-### Questions
+The in-memory `cfifo` cannot simply be placed in shared memory because standard
+containers and strings contain process-local state. IPC requires an explicit
+storage and ownership design.
 
-- Which transport is the initial baseline?
-- How are messages framed?
-- How are lane IDs serialized?
-- How are disconnected peers handled?
-- How are full remote queues represented?
-- Can shared memory reuse `niniFIFO`?
-- Where does copying occur?
+### v5 Definition of Done
 
-### Measurements
+- Transport semantics are independent from application execution.
+- Process failure and recovery behavior are documented.
+- Serialization compatibility is defined.
+- Resource ownership and cleanup are deterministic.
 
-- End-to-end latency.
-- Messages per second.
-- CPU usage.
-- Copy count.
-- Memory usage.
-- Socket versus shared-memory performance.
+---
 
-### Definition Of Done
+## Project Structure
 
-- Two processes can exchange messages reliably.
-- Framing is correct.
-- Failure paths are tested.
-- Transport decisions are documented.
-- Performance is measured.
+```text
+niniBUS
+├── Core Message Bus
+├── Lane Management
+├── Publish / Subscribe
+└── cfifo
+    └── Shared cursor-based FIFO
+```
 
-### Engineering Question
+`niniBUS` intentionally does not own worker threads or invoke subscriber
+callbacks. This separation allows applications to choose their own execution
+model:
 
-Can `niniBUS` cross a process boundary while preserving its semantics?
+- embedded firmware;
+- RTOS tasks;
+- standard C++ threads;
+- simulators;
+- event loops;
+- platform services.
 
-## Future Topics
+Execution policy belongs to the application. Message transport belongs to the
+bus.
 
-These are intentionally outside the main roadmap until a real need appears.
+---
 
-- Priority lanes.
-- Consumer queue-depth feedback.
-- Message filtering.
-- Wildcard subscription.
-- QoS.
-- Persistence.
-- Zero-copy messaging.
-- Shared-memory optimizations.
-- Monitoring.
-- Tracing.
-- Metrics.
-- Distributed operation.
-- Network discovery.
-- Security.
-- Authentication.
-- Versioned message schemas.
+## Long-Term Vision
+
+The broader goal is a family of small systems-software components that remain
+independently useful:
+
+```text
+cfifo
+  │
+  ▼
+niniBUS
+  │
+  ▼
+niniMem
+  │
+  ▼
+Future components
+```
+
+Each component should have one clear responsibility, a small explicit API, and
+behavior that can be understood without reading an entire framework.
+
+---
 
 ## Release Rule
 
-A version is complete only when it is:
+Every milestone follows the same sequence:
 
-- Implemented.
-- Tested.
-- Documented.
-- Measured where relevant.
-- Cleanly committed.
-- Tagged.
-- Explainable in a video.
+1. State the engineering problem.
+2. Define the policy and invariants.
+3. Implement the smallest complete solution.
+4. Add positive, negative, boundary, and regression tests.
+5. Update public and internal documentation.
+6. Build from a clean state and run all tests.
+7. Release only when implementation, tests, and documentation agree.
 
-Do not start the next version because the next topic looks exciting.
+---
 
-Start it only after the current version is complete.
+## License
 
-## Project Philosophy
-
-```text
-Make it boring.
-Make it correct.
-Make it complete.
-Measure it.
-Document it.
-Then move forward.
-```
+This project is released under the MIT License.

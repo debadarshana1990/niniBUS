@@ -845,3 +845,182 @@ a capacity and stores it in a runtime `capacity_` member.
 - FIFO APIs need exceptions instead of status values.
 - The project introduces richer error payloads.
 - `front()` needs a non-throwing alternative.
+
+---
+
+## DD-023 - Use One Shared Cursor FIFO Per Lane
+
+**Status**: Accepted for v2.0.0.
+
+**Context**:
+
+The destructive FIFO model allowed one consumer to remove a message. Broadcast
+requires several subscribers to read the same message independently. A queue
+per subscriber would duplicate storage and make publish cost grow with
+subscriber count.
+
+**Decision**:
+
+Each lane owns one `nbus::cfifo<std::string>`. Messages are stored once; each
+registered subscriber owns an independent logical cursor. New cursors begin at
+the current tail and receive future messages only. Duplicate registration
+preserves the existing cursor position.
+
+**Consequences**:
+
+- Multiple subscribers can read the same message.
+- Normal read advances only the requesting subscriber.
+- Late subscribers do not receive retained history.
+- Replay or cursor seeking requires a separate explicit API.
+
+**Supersedes**:
+
+This extends DD-004. The lane queue is now shared cursor-based storage rather
+than a conventional destructive FIFO.
+
+---
+
+## DD-024 - Receive Must Not Lazily Create Bus Topology
+
+**Status**: Accepted for v2.0.0.
+
+**Context**:
+
+A misspelled lane or subscriber ID must not silently create bus state and hide
+a configuration error.
+
+**Decision**:
+
+`receive()` performs lookup only:
+
+- It does not create a missing lane.
+- It does not register a missing subscriber.
+- Missing lane and missing subscriber return `ReceiveStatus::NO_CURSOR`.
+- Callers establish topology with `createLane()` and `subscribe()`.
+
+A successful receive still advances the requesting existing cursor. The
+decision prohibits lazy lane-map and cursor-registry mutation, not normal
+delivery-state progress.
+
+**Consequences**:
+
+- Invalid receives do not grow maps.
+- Configuration mistakes remain observable.
+- Publish intentionally differs: it may create a missing lane with
+  `DEFAULT_LANE_CAPACITY`.
+
+**Supersedes**:
+
+This supersedes the receive-side portion of DD-011. Publish-side lazy creation
+remains accepted.
+
+---
+
+## DD-025 - Prioritize Writes And Permit Slow Readers To Skip
+
+**Status**: Accepted for the current v2.0.0 policy.
+
+**Decision**:
+
+`cfifo::write()` reclaims space when full and then accepts the new message.
+When subscribers are behind, every cursor tied at the oldest sequence is moved
+to the tail. Moving only one tied cursor could leave the same minimum in place
+and release no capacity.
+
+The skipped distance is accumulated for every affected cursor and returned
+through `SkippedMessages` with that subscriber's next successful read.
+
+**Consequences**:
+
+- Storage remains bounded.
+- A stalled subscriber cannot block publishing indefinitely.
+- Slow subscribers can lose unread messages.
+- Applications must inspect `SkippedMessages` when loss matters.
+- This is neither lossless delivery nor publisher backpressure.
+- Legacy `PublishStatus::LaneFull` is not emitted by the current write path.
+
+**Supersedes**:
+
+This supersedes DD-022's reject-when-full behavior for the active cursor FIFO.
+
+---
+
+## DD-026 - Use Logical Sequences And Private Cursor State
+
+**Status**: Accepted for v2.0.0.
+
+**Decision**:
+
+- Logical messages and cursor positions use `SequenceType`.
+- Capacity, counts, credit, and physical indexes use `SizeType`.
+- Physical index is `sequence % capacity`.
+- Cursor representation remains private to `nbus::cfifo`.
+- Public operations are `write()`, `read()`, cursor lifecycle operations, and
+  shared-state accessors.
+- STL-style destructive FIFO operations are not exposed.
+
+**Consequences**:
+
+- Sequence identity survives physical-buffer wraparound.
+- `cfifo` is STL-inspired, not an STL container or drop-in replacement.
+- Sequence rollover needs a future explicit policy.
+
+---
+
+## DD-027 - Distinguish Shared State From Cursor Progress
+
+**Status**: Accepted for v2.0.0.
+
+**Decision**:
+
+`empty()`, `full()`, `size()`, and `credit()` describe retained shared storage,
+not whether one subscriber has pending messages. A queue can be non-empty while
+a fast cursor is caught up because a slower cursor still needs retained data.
+Callers use the cursor-specific read result for availability.
+
+---
+
+## DD-028 - Make Unsubscribe Explicit And Non-Creating
+
+**Status**: Accepted for v2.0.0.
+
+**Decision**:
+
+`unsubscribe()` removes an existing cursor and reports whether removal occurred.
+It never creates a lane. Missing lane, missing subscriber, and repeated removal
+return `false`. Re-registration starts at the then-current tail.
+
+Storage compaction after removal is lazy and occurs when a later full write
+needs reclamation.
+
+---
+
+## DD-029 - Keep v2 Single-Threaded
+
+**Status**: Accepted for v2.0.0.
+
+**Decision**:
+
+The current implementation has no internal thread-safety guarantee. Locks,
+atomics, memory ordering, and lock-free techniques are deferred until the
+broadcast and reclaim rules are stable.
+
+---
+
+## DD-030 - Keep This Decision Log Append-Only
+
+**Status**: Accepted.
+
+**Decision**:
+
+New decisions are appended. Earlier entries are not deleted or rewritten when
+the implementation evolves. A replacement decision must preserve and identify
+the earlier decision it supersedes and explain why the choice changed.
+
+**Consequences**:
+
+- Historical entries may describe APIs that no longer exist.
+- Readers can trace the evolution from destructive FIFO delivery to
+  cursor-based broadcast.
+- `README.md`, `DESIGN.md`, and `cfifo.md` describe current behavior; this file
+  preserves architectural history.

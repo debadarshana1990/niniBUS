@@ -7,29 +7,50 @@ CreateLaneStatus niniBUS::createLane(laneID_t laneID, uint32_t capacity)
         return CreateLaneStatus::InvalidCapacity;
     }
 
-    auto [it, inserted] = lane_map_.try_emplace(laneID, capacity);
+    auto [it, inserted] = lanes_.try_emplace(laneID, capacity);
     return inserted ? CreateLaneStatus::Ok : CreateLaneStatus::LaneExists;
 }
 
 PublishResult niniBUS::publish(laneID_t laneID, const std::string& message)
 {
     // Check if lane exists, if not create it 
-    auto [it, _] = lane_map_.try_emplace(laneID);
+    auto [it, _] = lanes_.try_emplace(laneID);
 
     return it->second.push(message);
 }
 
-ReceiveResult niniBUS::receive(laneID_t laneID, std::string& message)
+SubscribeResult niniBUS::subscribe(laneID_t laneID,subscribeID_t subscribeID)
+{
+    //check if lane Exist ,if not return lane not exist
+    auto it = lanes_.find(laneID);
+    if(it == lanes_.end())
+        return {SubscribeStatus::LaneNotExist,0};
+    auto result = it->second.subscribe(subscribeID);
+    return result;
+}
+
+
+
+
+ReceiveResult niniBUS::receive(laneID_t laneID,subscribeID_t subscribeID ,std::string& message)
 {
     message.clear();
-    //check if the laneID is present
-    auto [it, inserted] = lane_map_.try_emplace(laneID);
-    if(inserted)
+    //No lazy lane creation any more. Receiver should not mutate anything 
+    
+    auto it = lanes_.find(laneID);
+    if(it == lanes_.end())
     {
-        return { 0,ReceiveStatus::LazyLaneCreated };
+        return { ReceiveStatus::NO_CURSOR,0,0,0 };
     }
-
     // Get reference to the lane in the map and check if it has content
-    lane_t& laneObj = it->second;
-    return laneObj.pop(message);
+    lane& laneObj = it->second;
+    return laneObj.pop(subscribeID,message);
+}
+bool niniBUS::unsubscribe(laneID_t laneID, subscribeID_t subscribeID)
+{
+    auto it = lanes_.find(laneID);
+    if(it == lanes_.end())
+        return false;
+    lane& laneObj = it->second;
+    return laneObj.unsubscribe(subscribeID);
 }

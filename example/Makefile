@@ -3,9 +3,9 @@ CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -MMD -MP
 CPPFLAGS := -I..
 LDFLAGS := -L.. -lniniBUS
 
-TARGET := hello
+TARGET := niniBUS_test
 CFIFO_TARGET := cfifo_test
-SRCS := hello.cpp
+SRCS := niniBUS_test.cpp
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(OBJS:.o=.d)
 LIB := ../libniniBUS.a

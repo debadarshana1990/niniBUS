@@ -1,16 +1,16 @@
 #pragma once
 #include <string>
-#include "niniFIFO.h"
 #include "status.h"
+#include "cfifo.h"
 
 
 #define DEFAULT_LANE_CAPACITY (uint32_t)10 // Default capacity for lazily created lanes.
 
-class lane_t
+class lane
 {
 
     // Bounded message storage for this lane.
-    niniFIFO<std::string> content_;
+    nbus::cfifo<std::string> content_;
     uint32_t credit() const
     {
         return content_.capacity() - content_.size();
@@ -22,10 +22,13 @@ class lane_t
     
 public:
 
-    explicit lane_t(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content_(capacity) {}
+    explicit lane(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content_(capacity) {}
 
 
     PublishResult push(const std::string& message);
-    ReceiveResult pop(std::string& message);
+    ReceiveResult pop(subscribeID_t subscribeID,std::string& message);
+    SubscribeResult subscribe(subscribeID_t subscribeID);
+    bool unsubscribe(subscribeID_t subscribeID);
+   
     
 };

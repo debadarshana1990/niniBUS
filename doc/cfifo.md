@@ -320,7 +320,7 @@ That is the entire public menu. The chef refuses to serve `pop_front()`.
 ### `create_cursor()`
 
 ```cpp
-bool create_cursor(subscriber_type id);
+SequenceType create_cursor(subscriber_type id);
 ```
 
 A new cursor is initialized at the current tail:
@@ -357,10 +357,10 @@ The return value is:
 
 | Return | Meaning |
 |---|---|
-| `true` | A new cursor was inserted. |
-| `false` | The ID was already registered. |
+| `1` | A new cursor was inserted. |
+| `0` | The ID was already registered. |
 
-Duplicate registration does not reset or change the existing cursor position.
+The declared return type is `SequenceType`, but the current implementation returns the boolean `try_emplace(...).second` converted to that type. Therefore this value is an insertion flag, not the cursor position or tail sequence. Duplicate registration does not reset or change the existing cursor position.
 
 Calling twice is not a subscription renewal ceremony. The first bookmark stays
 exactly where it was.
@@ -1133,8 +1133,8 @@ In short: bring a mutex. Optimism is not a synchronization primitive.
 - Reading an unknown subscriber returns `NO_CURSOR`; it does not throw.
 - Reading a caught-up subscriber returns `NO_PENDING_MESSAGE`; it does not
   throw.
-- Duplicate cursor registration returns `false`; it does not throw merely
-  because the ID already exists.
+- Duplicate cursor registration returns numeric `0`; it does not throw merely
+  because the ID already exists. A new registration returns numeric `1`.
 - Removing an unknown cursor returns `false`.
 
 The API does not currently define a general exception-safety guarantee for
@@ -1167,6 +1167,7 @@ Every data structure has dreams larger than its current implementation.
 - Allocator customization is not exposed; the standard allocator has the job.
 - Move-only or non-default-constructible message types are not supported by the
   current vector-and-assignment storage model.
+- `create_cursor()` currently declares `SequenceType` but returns a numeric insertion flag (`1` or `0`); this should be normalized to an intentional API type in a future cleanup.
 - Sequence-number overflow behavior is not defined. A 64-bit sequence provides
   a very long runway, but infinity was outside the milestone.
 - Serialization and persistence are not provided. Restarting the process is

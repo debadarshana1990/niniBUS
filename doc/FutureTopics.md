@@ -1,375 +1,115 @@
 # niniBUS Future Topics
 
-This document is the parking lot for ideas that are intentionally outside the
-active milestone.
+This document holds work intentionally deferred from the current
+single-threaded, bounded, write-prioritized cursor bus.
+
+## API Consistency
+
+- Remove or repurpose `PublishStatus::LaneFull` if compatibility permits.
+- Define the intended meaning of `SubscribeResult::sequenceID` and make the
+  implementation and name agree.
+- Consider separate receive statuses for missing lane and missing subscriber
+  only if callers need the distinction.
+- Decide whether bus result member names should follow one naming convention.
+
+## Alternative Delivery Policies
+
+The current policy always writes and may skip slow readers. Future policies
+could include:
+
+- reject write when full;
+- block or wait for readers;
+- timed write;
+- drop newest instead of oldest unread data;
+- disconnect a slow subscriber;
+- prioritize selected subscribers;
+- retain messages for a configured time;
+- provide lossless lanes separately from latest-data lanes.
+
+Policy must be chosen per lane or per bus explicitly. Changing the default
+silently would break delivery expectations.
+
+## Cursor Lifecycle
+
+- Immediate head recomputation after unsubscribe.
+- Semantics when the final cursor is removed.
+- Optional registration at head for replay.
+- Registration at a caller-provided sequence.
+- Cursor reset or seek.
+- Subscriber identity reuse.
+- Maximum cursor count and bounded registration storage.
+
+## Sequence Rollover
+
+Logical sequences use a finite unsigned type. Work is needed to define:
+
+- modular ordering;
+- safe distance comparisons;
+- pending and skipped calculations across rollover;
+- rollover tests near the maximum value;
+- whether reset is allowed when no cursors or messages remain.
+
+Ordinary unsigned wrap alone is not a complete ordering policy.
+
+## Concurrency
+
+The current implementation is single-threaded. A concurrent version must
+address:
+
+- lane-map insertion versus lookup;
+- writes versus reads on the circular buffer;
+- cursor registration/removal versus reclaim;
+- result visibility and message publication ordering;
+- iterator/reference invalidation;
+- lock granularity;
+- deadlock avoidance;
+- atomics and memory-order proofs;
+- starvation and progress guarantees.
+
+Start with a correct locked implementation and measured contention before
+considering lock-free structures.
+
+## Memory Predictability
+
+- Caller-supplied allocator.
+- Fixed storage with no post-construction allocation.
+- Bounded or non-owning message types.
+- Cursor registry without `unordered_map`.
+- Allocation-failure behavior.
+- Exact per-lane and per-subscriber footprint measurements.
+
+## Observability
+
+- Per-lane writes, reads, skips, and reclaim events.
+- Current subscriber count.
+- Per-cursor lag.
+- High-water retained size.
+- Last written and read sequence.
+- Diagnostic callbacks that do not change delivery behavior.
+
+Counters must define overflow and concurrency semantics before becoming API.
+
+## Testing
+
+- Model-based comparison against a simple reference implementation.
+- Random operation sequences covering write/read/subscribe/unsubscribe.
+- Capacity values 1, 2, and large boundaries.
+- Multiple tied slow-cursor groups.
+- Repeated unsubscribe/resubscribe cycles.
+- Sequence rollover injection.
+- Allocation-failure tests.
+- Sanitizer and race-detector builds.
+- Long-duration invariant checks.
+
+## Persistence And IPC
 
-The purpose is to prevent scope creep while keeping good ideas visible. A topic
-listed here is not approved for immediate implementation. Move it into
-`doc/Milestone.md` only when it becomes part of the active roadmap.
+Future transport work must define ownership, serialization, crash recovery,
+process death, cursor persistence, compatibility, security, and cleanup.
+The in-memory `cfifo` should not be assumed to map directly into shared memory
+because standard containers and strings contain process-local state.
 
-## Rules
+## Documentation
 
-- Capture ideas here instead of expanding the current milestone.
-- Do not implement a future topic until its milestone is active.
-- Prefer measurements before optimization work.
-- Promote a topic only when the problem is real, documented, and worth the
-  added complexity.
-
-## Promotion Checklist
-
-Before moving a topic from this document into a milestone:
-
-- [ ] The problem is clearly stated.
-- [ ] The expected user or developer benefit is clear.
-- [ ] The added complexity is acceptable.
-- [ ] The required tests are understood.
-- [ ] The documentation impact is understood.
-- [ ] The topic fits the active milestone.
-
-## V1 Candidates - Smarter Single-Threaded Bus
-
-These ideas improve the current single-threaded design without adding
-multi-threading or IPC.
-
-### FIFO Evolution
-
-Current state: V1 now uses a project-owned FIFO:
-
-```cpp
-niniFIFO<std::string>
-```
-
-This section now tracks possible future FIFO improvements rather than the
-initial replacement of `std::deque`.
-
-Topics:
-
-- Optional dynamic capacity.
-- Queue statistics.
-- Configurable queue size.
-- Clear overflow behavior.
-
-Questions:
-
-- Should capacity be per lane or global?
-- Should queue capacity be exposed through public runtime configuration?
-- Should capacity be mutable after FIFO/lane construction?
-- Should FIFO errors use return statuses, exceptions, or both?
-
-Promotion trigger:
-
-- Move to a future milestone when runtime capacity, richer statistics, or a
-  different overflow policy becomes a real requirement.
-
-### Back Pressure
-
-Idea: define what happens when a lane cannot accept more messages.
-
-Possible policies:
-
-- Reject the new message.
-- Drop the oldest message.
-- Drop the newest message.
-- Block the publisher, if blocking APIs exist later.
-- Use a configurable per-lane policy.
-
-Possible API:
-
-```cpp
-enum class PublishStatus {
-    Ok,
-    LaneFull
-};
-
-struct PublishResult {
-    uint32_t Credit;
-    PublishStatus Status;
-};
-```
-
-Questions:
-
-- Should an existing lane be resizable, or should capacity remain immutable
-  after `createLane()`?
-- Should full lanes reject new messages, drop old messages, or use a
-  configurable policy?
-- Should `LaneFull` remain simple, or should it carry richer back-pressure
-  information?
-- Should dropped-message counts be tracked?
-
-Promotion trigger:
-
-- Move to V1 when the current `LaneFull` behavior is not enough or when slow
-  consumers become a real use case.
-
-### Lane Statistics
-
-Idea: expose lightweight information about lane state.
-
-Possible metrics:
-
-- Current queue depth.
-- High-water mark.
-- Total messages published.
-- Total messages received.
-- Total messages dropped.
-- Lane creation count.
-
-Questions:
-
-- Should statistics be always enabled?
-- Should statistics be optional for embedded builds?
-- Should stats be per lane, global, or both?
-
-Promotion trigger:
-
-- Move to V1 when queue capacity or observability becomes part of the public
-  API.
-
-## V2 Candidates - Embedded Optimization
-
-These ideas are about memory layout, predictability, and performance after the
-basic behavior is correct.
-
-### Memory Footprint Measurement
-
-Idea: measure before changing data structures.
-
-Measurements:
-
-- Size of `lane_t`.
-- Size of `niniFIFO<std::string>`.
-- Size and overhead of `std::unordered_map<laneID_t, lane_t>`.
-- Per-message allocation behavior from `std::string`.
-- Per-lane allocation behavior.
-- Allocation count during publish/receive.
-
-Questions:
-
-- How much memory does one lane consume?
-- How much overhead does `unordered_map` add?
-- Is dynamic allocation acceptable for the target environment?
-- What are the real memory limits?
-
-Promotion trigger:
-
-- Move to V2 when target memory constraints are known.
-
-### Storage Strategy Alternatives
-
-Ideas to compare:
-
-- `std::unordered_map<laneID_t, lane_t>`.
-- Sorted vector of lanes.
-- Fixed-size lane table.
-- Open-addressed static hash table.
-- Pool-allocated lanes.
-
-Questions:
-
-- Is lane lookup speed more important than memory predictability?
-- Is the maximum lane count known?
-- Should lane IDs be dense or sparse?
-
-Promotion trigger:
-
-- Move to V2 after memory and timing measurements exist.
-
-### Embedded Configuration
-
-Possible compile-time configuration:
-
-- Maximum lane count.
-- Maximum queue depth.
-- Maximum message size.
-- Static memory allocation mode.
-- Optional statistics.
-- Optional logging.
-
-Questions:
-
-- Should configuration be compile-time, runtime, or both?
-- Should defaults optimize for readability or embedded constraints?
-- How should invalid configuration be reported?
-
-Promotion trigger:
-
-- Move to V2 when hard resource limits are defined.
-
-## V3 Candidates - Thread Safety And Concurrency
-
-These ideas are deferred until the single-threaded bus is stable and tested.
-
-### Thread-Safe Bus
-
-Topics:
-
-- Producer synchronization.
-- Consumer synchronization.
-- Mutex ownership.
-- Lane-level locking.
-- Global bus locking.
-- Blocking receive.
-- Timeout receive.
-- Read/write contention.
-- Performance measurement.
-
-Questions:
-
-- Should all methods be thread-safe?
-- Should users opt into thread safety?
-- Should receive block or stay non-blocking?
-- Is ordering guaranteed across threads?
-
-Promotion trigger:
-
-- Move to V3 when multi-threaded usage is an explicit requirement.
-
-### Lock-Free Data Structures
-
-Study topics:
-
-- SPSC queue.
-- MPSC queue.
-- MPMC queue.
-- Ring buffers.
-- CAS.
-- ABA problem.
-- Acquire/release semantics.
-- False sharing.
-- Cache-line alignment.
-
-Questions:
-
-- Is lock-free behavior needed, or would mutexes be enough?
-- Which producer/consumer shape matters most?
-- How will correctness be tested?
-
-Promotion trigger:
-
-- Move out of study only after mutex-based concurrency has been implemented and
-  measured.
-
-## V4 Candidates - IPC
-
-These ideas are for communication across processes.
-
-Possible transports:
-
-- Unix domain sockets.
-- Shared memory.
-- Zero-copy shared buffers.
-
-Topics:
-
-- Transport abstraction.
-- Serialization format.
-- Connection management.
-- Process lifetime.
-- Error handling across process boundaries.
-- Transport-specific examples.
-
-Questions:
-
-- Should IPC live inside core `niniBUS` or in a separate transport layer?
-- Is zero-copy required?
-- What message format crosses process boundaries?
-- How are lane IDs shared between processes?
-
-Promotion trigger:
-
-- Move to V4 only after the in-process API is stable.
-
-## V5 Candidates - Production Features
-
-These ideas should wait until core behavior is stable, tested, and documented.
-
-Possible features:
-
-- Structured logging.
-- Quiet logging controls.
-- Metrics hooks.
-- Profiling hooks.
-- Configuration object or builder.
-- Install target.
-- Packaging.
-- CI workflow.
-- Release checklist.
-- API versioning policy.
-
-Questions:
-
-- Which features help real users?
-- Which features can remain optional?
-- Which features increase the maintenance burden?
-
-Promotion trigger:
-
-- Move to V5 after core, tests, and examples are stable.
-
-## Research Topics
-
-These are learning/research notes, not implementation commitments.
-
-### Memory Internals
-
-- `memcpy` implementation.
-- `memmove` implementation.
-- glibc internals.
-- musl internals.
-- Alignment.
-- SIMD optimization.
-- Cache optimization.
-- Copy avoidance.
-
-### Scheduling And Event Dispatch
-
-- Event loops.
-- Dispatch scheduling.
-- Fair scheduling.
-- Priority scheduling.
-- Work stealing.
-- Runtime scheduling.
-- SystemC kernel scheduler.
-- FreeRTOS scheduler.
-- Linux scheduler.
-- `epoll` internals.
-- `io_uring`.
-
-### Zero Copy
-
-- Shared payloads.
-- Reference counting.
-- Scatter/gather IO.
-- DMA-friendly buffers.
-- Buffer pools.
-
-## Future Documentation
-
-Possible future documents:
-
-- Architecture Guide.
-- API Guide.
-- Memory Model.
-- Threading Model.
-- Performance Guide.
-- Benchmark Report.
-- Release Guide.
-
-## Blog Ideas
-
-Possible future articles:
-
-- Why I built `niniBUS`.
-- Designing the lane abstraction.
-- Building a bounded FIFO.
-- Back pressure in embedded systems.
-- Memory optimization journey.
-- Building a thread-safe message bus.
-- Designing for embedded constraints.
-
-## Never Forget
-
-Interesting ideas are captured, not implemented immediately.
-
-The current milestone always has priority.
+When a future topic is implemented, move it to `Milestone.md`, record the
+decision in `DesignDecisions.md`, update `DESIGN.md` and `cfifo.md`, and add
+the exact tests to `testReport.md`.

@@ -1,232 +1,165 @@
 # niniBUS
 
-`niniBUS` is a small C++ in-process message bus.
+`niniBUS` is a small, single-threaded, in-process message bus built around
+named lanes and cursor-based broadcast delivery.
 
-It stores string messages in numeric lanes. Callers can publish messages to a
-lane and receive queued messages from a lane.
+Each lane owns one bounded `nbus::cfifo<std::string>`. Subscribers do not own
+private message queues. Instead, every subscriber has a cursor into the lane's
+shared sequence of messages. That lets several subscribers read the same
+message independently without duplicating message storage.
 
-Current project phase: V1 - Smarter Bus.
+## Current Delivery Policy
 
-## API
+The current policy prioritizes writers:
 
-The public API is declared in `niniBUS.h`:
+- `publish()` always accepts the message.
+- If a lane does not exist, `publish()` creates it with
+  `DEFAULT_LANE_CAPACITY`.
+- When a lane is full, the slowest cursor group is advanced so the write can
+  continue.
+- A subscriber can therefore miss messages.
+- The next successful `receive()` reports the number skipped in
+  `SkippedMessages`.
+
+This is bounded, write-prioritized broadcast delivery. It is not lossless
+delivery and it is not backpressure.
+
+## Receive Does Not Create Topology
+
+`receive()` never creates a missing lane and never registers a missing
+subscriber. A receive operation may advance an existing subscriber cursor,
+but it does not mutate the bus topology.
+
+- Missing lane: `ReceiveStatus::NO_CURSOR`
+- Missing subscriber: `ReceiveStatus::NO_CURSOR`
+- Registered subscriber with nothing pending:
+  `ReceiveStatus::NO_PENDING_MESSAGE`
+
+Call `createLane()` and `subscribe()` before receiving.
+
+## Public API
 
 ```cpp
-using laneID_t = uint32_t;
+niniBUS();
 
-enum class PublishStatus {
-    Ok,
-    LaneFull
-};
+PublishResult publish(laneID_t lane_id, const std::string& message);
+ReceiveResult receive(laneID_t lane_id,
+                      subscribeID_t subscriber_id,
+                      std::string& message);
 
-enum class ReceiveStatus {
-    Ok,
-    LaneEmpty,
-    LazyLaneCreated
-};
-
-struct PublishResult {
-    uint32_t Credit;
-    PublishStatus Status;
-};
-
-struct ReceiveResult {
-    uint32_t PendingMessages;
-    ReceiveStatus Status;
-};
-
-enum class CreateLaneStatus {
-    Ok,
-    LaneExists,
-    InvalidCapacity
-};
-
-PublishResult publish(laneID_t laneID, const std::string& message);
-ReceiveResult receive(laneID_t laneID, std::string& message);
-CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
+CreateLaneStatus createLane(laneID_t lane_id, uint32_t capacity);
+SubscribeResult subscribe(laneID_t lane_id, subscribeID_t subscriber_id);
+bool unsubscribe(laneID_t lane_id, subscribeID_t subscriber_id);
 ```
 
-## How It Works
+## Basic Example
 
-- `createLane()` explicitly creates a lane with a caller-selected capacity.
-- A lane is also created lazily with `DEFAULT_LANE_CAPACITY` when it is first
-  published to or received from.
-- Each lane stores messages in `niniFIFO<std::string>`.
-- `lane_t` supplies the default capacity, while `niniFIFO` stores the selected
-  capacity in a runtime `capacity_` member.
-- FIFO storage uses `std::vector`, which is contiguous like `std::array` while
-  leaving room for future growth/configuration.
-- The lane ID is stored as the key in the bus map, not inside the `lane_t`
-  object.
-- `lane_t` keeps its queue internals private and owns push/pop behavior.
-- `niniBUS` stays intentionally small: it finds or creates a lane, then
-  delegates queue behavior to `lane_t`.
-- `publish()` appends a message to a lane and returns `PublishResult`.
-- `PublishResult::Status` says whether publish succeeded or the lane was full.
-- `PublishResult::Credit` reports remaining lane capacity after the publish
-  attempt.
-- `receive()` removes the oldest message from a lane when available and returns
-  `ReceiveResult`.
-- `receive()` creates a missing lane and returns
-  `ReceiveStatus::LazyLaneCreated` with `PendingMessages == 0`.
+```cpp
+#include "niniBUS.h"
 
-Each lane has one queue, so multiple receivers on the same lane compete for
-messages. A received message is removed and cannot be received again.
+#include <cassert>
+#include <string>
 
-## Publish Results
+int main()
+{
+    niniBUS bus;
 
-`publish()` returns a `PublishResult`:
+    assert(bus.createLane(10, 4) == CreateLaneStatus::Ok);
+    assert(bus.subscribe(10, 100).status == SubscribeStatus::Ok);
+    assert(bus.subscribe(10, 200).status == SubscribeStatus::Ok);
 
-- `Status == PublishStatus::Ok` when the message was queued.
-- `Status == PublishStatus::LaneFull` when the lane has no remaining credit.
-- `Credit` is the number of messages that can still be accepted by that lane.
+    const PublishResult sent = bus.publish(10, "hello");
 
-## Explicit Lane Creation
+    std::string first;
+    std::string second;
+    const ReceiveResult a = bus.receive(10, 100, first);
+    const ReceiveResult b = bus.receive(10, 200, second);
 
-`createLane(laneID, capacity)` creates an empty lane with the requested buffer
-capacity:
+    assert(a.Status == ReceiveStatus::SUCCESS);
+    assert(b.Status == ReceiveStatus::SUCCESS);
+    assert(first == "hello");
+    assert(second == "hello");
+    assert(a.sequenceID == sent.sequenceID);
+    assert(b.sequenceID == sent.sequenceID);
 
-- `CreateLaneStatus::Ok` means the lane was created.
-- `CreateLaneStatus::LaneExists` means the ID was already registered. The
-  existing lane, queued messages, and capacity are preserved.
-- `CreateLaneStatus::InvalidCapacity` means capacity was zero and no lane was
-  created. The smallest valid capacity is one.
-- Publishing to an unknown lane remains valid and creates it with
-  `DEFAULT_LANE_CAPACITY`.
-
-## Receive Results
-
-`receive()` returns a `ReceiveResult`:
-
-- `Status == ReceiveStatus::Ok` when a message was received.
-- `Status == ReceiveStatus::LazyLaneCreated` when the lane did not exist and
-  was created for future messages.
-- `Status == ReceiveStatus::LaneEmpty` when the lane exists but has no queued
-  messages.
-- `PendingMessages` reports how many messages remain queued after a successful
-  receive.
-- `PendingMessages == 0` for lazy-created and empty-lane receive results.
-
-## Repository Layout
-
-- `niniBUS.h` - public bus API and lane registry.
-- `niniBUS.cpp` - bus map lookup, lazy lane creation, and delegation.
-- `Lane.h` - lane API and lane-local queue state.
-- `Lane.cpp` - lane-local push/pop behavior.
-- `niniFIFO.h` - header-only FIFO template.
-- `status.h` - publish and receive status/result types.
-- `Makefile` - builds the `niniBUS` static library.
-- `example/hello.cpp` - assert-based example tests.
-- `example/Makefile` - builds and runs `hello.cpp`.
-- `doc/DESIGN.md` - current architecture and implementation notes.
-- `doc/DesignDecisions.md` - design decision log.
-- `doc/Milestone.md` - phased roadmap and TODO lists.
-- `doc/FutureTopics.md` - deferred ideas and research topics.
-- `doc/Learning.md` - implementation lessons and compiler notes.
-- `doc/cfifo.md` - Cursor FIFO public API, usage examples, and current
-  limitations.
-
-## Documentation
-
-Start here:
-
-- [doc/DESIGN.md](doc/DESIGN.md) - how the current bus is structured.
-- [doc/DesignDecisions.md](doc/DesignDecisions.md) - why key design choices
-  were made, including the move from vector/index storage to direct map storage.
-- [doc/Milestone.md](doc/Milestone.md) - active and future phase TODO lists.
-- [doc/FutureTopics.md](doc/FutureTopics.md) - ideas intentionally parked for
-  later milestones.
-- [doc/Learning.md](doc/Learning.md) - notes from implementation issues, such
-  as `unordered_map::operator[]` behavior.
-
-## Build The Library
-
-From the repository root:
-
-```bash
-make all
+    assert(bus.unsubscribe(10, 100));
+}
 ```
 
-This creates:
+A cursor starts at the lane's current tail. It receives messages published
+after registration, not retained history from before registration.
 
-```bash
-libniniBUS.a
-```
+## Result Meaning
 
-Generated `.o` and `.d` files are removed automatically.
+`PublishResult` contains:
 
-Clean the library build:
+- `Status`: currently `PublishStatus::Ok` on the active write path.
+- `Credit`: free retained slots after the write.
+- `sequenceID`: logical sequence assigned to the written message.
 
-```bash
-make clean
-```
+`ReceiveResult` contains:
 
-## Build The Example
+- `Status`: success, no pending message, or no cursor.
+- `PendingMessages`: messages still pending for that subscriber.
+- `sequenceID`: sequence read on success.
+- `SkippedMessages`: messages forcibly skipped since that subscriber's
+  previous successful read.
 
-From the example folder:
+`PublishStatus::LaneFull` remains declared for compatibility, but the current
+write-prioritized `cfifo` policy reclaims space instead of returning it.
 
-```bash
-cd example
-make all
-```
+## Lane And Subscription Rules
 
-This creates:
+- `createLane(id, capacity)` rejects zero capacity.
+- Creating an existing lane returns `CreateLaneStatus::LaneExists` and does
+  not replace its queue.
+- Publishing to a missing lane creates it with the default capacity.
+- Subscribing to a missing lane returns `SubscribeStatus::LaneNotExist`.
+- Duplicate subscription is idempotent and does not reset the cursor.
+- Unsubscribing a missing lane or subscriber returns `false`.
+- A successful unsubscribe removes that cursor from future delivery and
+  reclaim decisions.
 
-```bash
-example/hello
-```
+## Build And Test
 
-Generated `.o` and `.d` files are removed automatically.
-
-Run the hello example tests:
-
-```bash
-cd example
-make run
-```
-
-You can also use:
-
-```bash
+```sh
+make
 cd example
 make test
 ```
 
-Clean the example:
+The example Makefile builds and runs:
 
-```bash
-cd example
-make clean
-```
+- `niniBUS_test` for bus, lane, subscription, and unsubscribe behavior.
+- `cfifo_test` for cursor FIFO behavior and reclamation policy.
 
-## Hello Test Behavior
+Use `make clean` in the repository root and `example/` to remove generated
+objects, dependency files, libraries, and test executables.
 
-`example/hello.cpp` uses `assert()` to check:
+## Repository Guide
 
-- FIFO ordering.
-- Multiple lanes do not interfere.
-- Receive from an empty lane.
-- Publish to a non-existing lane.
-- Explicit lane creation with a custom capacity.
-- Duplicate creation without replacing the existing lane.
-- Default capacity for a lane created by `publish()`.
-- Lazy lane creation from `receive()`.
-- Lane credit.
-- Lane full behavior.
-- Receive pending-message counts.
-- FIFO wraparound and negative FIFO paths.
+- `niniBUS.h/.cpp`: public bus and lane lookup.
+- `Lane.h/.cpp`: lane wrapper around cursor FIFO.
+- `cfifo.h`: header-only `nbus::cfifo<T>`.
+- `status.h`: public IDs, statuses, and result records.
+- `example/niniBUS_test.cpp`: bus-level functional tests.
+- `example/cfifo_test.cpp`: data-structure tests.
+- `doc/DESIGN.md`: current architecture and operation flows.
+- `doc/DesignDecisions.md`: decisions and consequences.
+- `doc/cfifo.md`: complete cursor FIFO contract and reclaim policy.
+- `doc/Milestone.md`: implemented and future milestones.
+- `doc/Learning.md`: C++ and design lessons.
+- `doc/FutureTopics.md`: deliberately deferred work.
+- `testReport.md`: current coverage summary.
 
-## Important Limitations
+## Current Limitations
 
-- The bus is not thread-safe.
-- There is no `subscribe()` API; lanes can be created explicitly with
-  `createLane()` or lazily by `publish()` and `receive()`.
-- Capacity is fixed for the lifetime of a lane. Calling `createLane()` for an
-  existing ID does not resize or replace it.
-- Lane queue internals are private; callers interact through the bus API rather
-  than directly mutating lane queues.
-- `niniBUS::publish()` and `niniBUS::receive()` are intentionally thin: they
-  find or create a lane and delegate queue behavior to `lane_t::push()` or
-  `lane_t::pop()`.
+- Single-threaded only.
+- In-process only.
+- Messages are copied strings.
+- No persistence, durability, acknowledgement, retry, or transport.
+- No lossless mode or publisher backpressure.
+- Sequence rollover is not yet handled.
+- Removing a cursor does not promise immediate storage compaction.
 
-See [doc/DESIGN.md](doc/DESIGN.md) and the files in [doc/](doc/) for more detail.
+These are explicit boundaries of the current version, not hidden guarantees.
