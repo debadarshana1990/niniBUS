@@ -1,5 +1,4 @@
 #include "Lane.h"
-#include "cfifo.h"
 
 #include <stdexcept>
 
@@ -23,28 +22,39 @@ ReceiveStatus to_receive_status(nbus::CFIFOReadStatus status)
 
 }
 
-PublishResult lane::push(const std::string& message)
+PublishResult Lane::push(const std::string& message)
 {
-    auto result = content_.write(message);
-    return { result.credit, static_cast<sequenceId_t>(result.sequence_id) };
+    const auto result = content_.write(message);
+    return {
+        result.credit,
+        static_cast<sequenceId_t>(result.sequence_id)
+    };
 }
 
-ReceiveResult lane::pop(subscribeID_t subscribeID,std::string& message)
+ReceiveResult Lane::pop(
+    subscriberID_t subscriberID,
+    std::string& message)
 {
-   
-    auto result = content_.read(subscribeID, message);
-    auto status = to_receive_status(result.status);
-    return { status, result.pending_messages, 
-        static_cast<sequenceId_t>(result.sequence_id), static_cast<uint64_t> (result.skipped_messages) };
+    const auto result = content_.read(subscriberID, message);
+    const auto status = to_receive_status(result.status);
+    return {
+        status,
+        result.pending_messages,
+        static_cast<sequenceId_t>(result.sequence_id),
+        static_cast<std::uint64_t>(result.skipped_messages)
+    };
 }
 
-SubscribeResult lane::subscribe(subscribeID_t subscribeID)
+SubscribeResult Lane::subscribe(subscriberID_t subscriberID)
 {
-    auto sequenceId = content_.create_cursor(subscribeID);
-    return { SubscribeStatus::Ok, static_cast<sequenceId_t>(sequenceId) };
-
+    const auto sequenceId = content_.create_cursor(subscriberID);
+    return {
+        SubscribeStatus::Ok,
+        static_cast<sequenceId_t>(sequenceId)
+    };
 }
-bool lane::unsubscribe(subscribeID_t subscribeID)
+
+bool Lane::unsubscribe(subscriberID_t subscriberID)
 {
-    return content_.remove_cursor(subscribeID);
+    return content_.remove_cursor(subscriberID);
 }

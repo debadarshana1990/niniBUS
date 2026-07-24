@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -44,11 +45,51 @@ void test_cursor_registration()
     cfifo<std::string> queue(3);
 
     assert(!queue.contains_cursor(10));
-    assert(queue.create_cursor(10));
+    assert(queue.create_cursor(10) == 0);
     assert(queue.contains_cursor(10));
-    assert(!queue.create_cursor(10));
+    assert(queue.create_cursor(10) == 0);
 
-    print_pass("cursor registration and duplicate detection");
+    queue.write("A");
+    queue.write("B");
+    assert(queue.create_cursor(20) == 2);
+
+    print_pass("cursor registration returns the next-read sequence");
+}
+
+void test_duplicate_cursor_returns_existing_position()
+{
+    cfifo<std::string> queue(4);
+    std::string message;
+
+    assert(queue.create_cursor(10) == 0);
+    queue.write("A");
+    queue.write("B");
+
+    assert(queue.read(10, message).sequence_id == 0);
+    assert(message == "A");
+
+    // Duplicate registration is idempotent and reports the cursor's actual
+    // next-read position instead of the current tail.
+    assert(queue.create_cursor(10) == 1);
+    const auto result = queue.read(10, message);
+    assert(result.sequence_id == 1);
+    assert(message == "B");
+
+    print_pass("duplicate cursor reports its existing position");
+}
+
+void test_cursor_ids_cover_full_key_range()
+{
+    cfifo<std::string> queue(2);
+    constexpr auto maximum_id =
+        std::numeric_limits<std::uint32_t>::max();
+
+    assert(queue.create_cursor(0) == 0);
+    assert(queue.create_cursor(maximum_id) == 0);
+    assert(queue.contains_cursor(0));
+    assert(queue.contains_cursor(maximum_id));
+
+    print_pass("cursor IDs support the full uint32_t key range");
 }
 
 void test_read_without_cursor()
@@ -71,7 +112,7 @@ void test_cursor_starts_at_current_tail()
     std::string message;
 
     assert(queue.write("old-message").sequence_id == 0);
-    assert(queue.create_cursor(30));
+    queue.create_cursor(30);
 
     CFIFOReadResult initially_caught_up = queue.read(30, message);
     assert(initially_caught_up.status ==
@@ -93,8 +134,8 @@ void test_multiple_cursors_read_same_messages()
     cfifo<std::string> queue(3);
     std::string message;
 
-    assert(queue.create_cursor(40));
-    assert(queue.create_cursor(41));
+    queue.create_cursor(40);
+    queue.create_cursor(41);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
 
@@ -157,7 +198,7 @@ void test_cursor_removal()
 {
     cfifo<std::string> queue(2);
 
-    assert(queue.create_cursor(50));
+    queue.create_cursor(50);
     assert(queue.contains_cursor(50));
     assert(queue.remove_cursor(50));
     assert(!queue.contains_cursor(50));
@@ -171,7 +212,7 @@ void test_empty_string_message()
     cfifo<std::string> queue(1);
     std::string message = "stale";
 
-    assert(queue.create_cursor(60));
+    queue.create_cursor(60);
     assert(queue.write("").sequence_id == 0);
 
     CFIFOReadResult result = queue.read(60, message);
@@ -190,7 +231,7 @@ void test_reclaim_keeps_size_and_credit_bounded()
     cfifo<std::string> queue(2);
     std::string message;
 
-    assert(queue.create_cursor(70));
+    queue.create_cursor(70);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
 
@@ -212,7 +253,7 @@ void test_reclaim_reports_skipped_messages()
     cfifo<std::string> queue(2);
     std::string message;
 
-    assert(queue.create_cursor(80));
+    queue.create_cursor(80);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
 
@@ -240,8 +281,8 @@ void test_reclaim_preserves_other_cursor_progress()
     cfifo<std::string> queue(2);
     std::string message;
 
-    assert(queue.create_cursor(90));
-    assert(queue.create_cursor(91));
+    queue.create_cursor(90);
+    queue.create_cursor(91);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
 
@@ -269,7 +310,7 @@ void test_reclaim_when_all_messages_were_consumed()
     cfifo<std::string> queue(2);
     std::string message;
 
-    assert(queue.create_cursor(100));
+    queue.create_cursor(100);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
     assert(queue.full());
@@ -299,7 +340,7 @@ void test_repeated_reclaim_and_wraparound()
     cfifo<std::string> queue(2);
     std::string message;
 
-    assert(queue.create_cursor(110));
+    queue.create_cursor(110);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
 
@@ -326,7 +367,7 @@ void test_skipped_messages_accumulate_until_successful_read()
     cfifo<std::string> queue(2);
     std::string message;
 
-    assert(queue.create_cursor(115));
+    queue.create_cursor(115);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
 
@@ -374,7 +415,7 @@ void test_capacity_one_reclaim()
     cfifo<std::string> queue(1);
     std::string message;
 
-    assert(queue.create_cursor(120));
+    queue.create_cursor(120);
     assert(queue.write("old").sequence_id == 0);
     assert(queue.write("latest").sequence_id == 1);
 
@@ -394,8 +435,8 @@ void test_removing_slowest_cursor_changes_reclaim_candidate()
     cfifo<std::string> queue(3);
     std::string message;
 
-    assert(queue.create_cursor(130));
-    assert(queue.create_cursor(131));
+    queue.create_cursor(130);
+    queue.create_cursor(131);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
     assert(queue.write("C").sequence_id == 2);
@@ -422,12 +463,12 @@ void test_removed_cursor_reregisters_at_current_tail()
     cfifo<std::string> queue(3);
     std::string message;
 
-    assert(queue.create_cursor(132));
+    queue.create_cursor(132);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.remove_cursor(132));
 
     assert(queue.write("B").sequence_id == 1);
-    assert(queue.create_cursor(132));
+    queue.create_cursor(132);
 
     const auto caught_up = queue.read(132, message);
     assert(caught_up.status == CFIFOReadStatus::NO_PENDING_MESSAGE);
@@ -447,8 +488,8 @@ void test_reclaim_does_not_treat_subscriber_id_as_sequence()
     std::string message;
 
     // These IDs deliberately do not match head, tail, or cursor sequences.
-    assert(queue.create_cursor(5000));
-    assert(queue.create_cursor(7000));
+    queue.create_cursor(5000);
+    queue.create_cursor(7000);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
 
@@ -477,8 +518,8 @@ void test_reclaim_moves_every_cursor_tied_at_head()
     cfifo<std::string> queue(3);
     std::string message;
 
-    assert(queue.create_cursor(200));
-    assert(queue.create_cursor(300));
+    queue.create_cursor(200);
+    queue.create_cursor(300);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
     assert(queue.write("C").sequence_id == 2);
@@ -507,9 +548,9 @@ void test_reclaim_tied_slowest_cursors_preserves_advanced_cursor()
     cfifo<std::string> queue(3);
     std::string message;
 
-    assert(queue.create_cursor(400));
-    assert(queue.create_cursor(401));
-    assert(queue.create_cursor(402));
+    queue.create_cursor(400);
+    queue.create_cursor(401);
+    queue.create_cursor(402);
     assert(queue.write("A").sequence_id == 0);
     assert(queue.write("B").sequence_id == 1);
     assert(queue.write("C").sequence_id == 2);
@@ -549,6 +590,8 @@ int main()
 
     test_constructor_and_global_state();
     test_cursor_registration();
+    test_duplicate_cursor_returns_existing_position();
+    test_cursor_ids_cover_full_key_range();
     test_read_without_cursor();
     test_cursor_starts_at_current_tail();
     test_multiple_cursors_read_same_messages();

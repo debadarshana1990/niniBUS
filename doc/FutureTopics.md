@@ -5,11 +5,8 @@ single-threaded, bounded, write-prioritized cursor bus.
 
 ## API Consistency
 
-- Define the intended meaning of `SubscribeResult::sequenceID` and make the
-  implementation and name agree.
 - Consider separate receive statuses for missing lane and missing subscriber
   only if callers need the distinction.
-- Decide whether bus result member names should follow one naming convention.
 
 ## Alternative Delivery Policies
 

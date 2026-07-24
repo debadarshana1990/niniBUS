@@ -1,28 +1,30 @@
 #pragma once
+
 #include <cstdint>
-#include "cfifo.h"
 
-
-using laneID_t = uint32_t;
-using subscribeID_t = std::uint32_t;
+using laneID_t = std::uint32_t;
+using subscriberID_t = std::uint32_t;
 using sequenceId_t = std::uint64_t;
 
-enum class ReceiveStatus {
+enum class ReceiveStatus
+{
     SUCCESS,
     NO_PENDING_MESSAGE,
     NO_CURSOR
 };
+
 struct PublishResult
 {
-    uint32_t Credit;
-    sequenceId_t sequenceID;
+    std::uint32_t credit;
+    sequenceId_t sequenceId;
 };
-struct ReceiveResult 
+
+struct ReceiveResult
 {
-    ReceiveStatus Status;
-    uint32_t PendingMessages;
-    sequenceId_t sequenceID;
-    uint64_t SkippedMessages;
+    ReceiveStatus status;
+    std::uint32_t pendingMessages;
+    sequenceId_t sequenceId;
+    std::uint64_t skippedMessages;
 };
 
 enum class CreateLaneStatus
@@ -34,9 +36,11 @@ enum class CreateLaneStatus
 enum class SubscribeStatus
 {
     Ok,
-    LaneNotExist,
+    LaneNotExist
 };
+
 struct SubscribeResult
 {
     SubscribeStatus status;
-    sequenceId_t startSequenceId;};
+    sequenceId_t nextSequenceId;
+};

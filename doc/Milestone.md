@@ -173,7 +173,7 @@ This policy keeps memory bounded and prevents slow subscribers from blocking
 publishers, but it is intentionally lossy:
 
 - Slow subscribers can miss messages.
-- Loss is reported through `SkippedMessages`.
+- Loss is reported through `skippedMessages`.
 - Skip counts accumulate across reclaim operations.
 - The accumulated count is returned with the subscriber's next successful
   receive and then reset.

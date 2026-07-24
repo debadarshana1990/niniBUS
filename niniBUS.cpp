@@ -1,6 +1,8 @@
 #include "niniBUS.h"
 
-CreateLaneStatus niniBUS::createLane(laneID_t laneID, uint32_t capacity)
+CreateLaneStatus niniBUS::createLane(
+    laneID_t laneID,
+    std::uint32_t capacity)
 {
     if (capacity == 0)
     {
@@ -13,44 +15,45 @@ CreateLaneStatus niniBUS::createLane(laneID_t laneID, uint32_t capacity)
 
 PublishResult niniBUS::publish(laneID_t laneID, const std::string& message)
 {
-    // Check if lane exists, if not create it 
-    auto [it, _] = lanes_.try_emplace(laneID);
-
-    return it->second.push(message);
+    const auto lane = lanes_.try_emplace(laneID);
+    return lane.first->second.push(message);
 }
 
-SubscribeResult niniBUS::subscribe(laneID_t laneID,subscribeID_t subscribeID)
+SubscribeResult niniBUS::subscribe(
+    laneID_t laneID,
+    subscriberID_t subscriberID)
 {
-    //check if lane Exist ,if not return lane not exist
     auto it = lanes_.find(laneID);
-    if(it == lanes_.end())
-        return {SubscribeStatus::LaneNotExist,0};
-    auto result = it->second.subscribe(subscribeID);
-    return result;
+    if (it == lanes_.end())
+    {
+        return {SubscribeStatus::LaneNotExist, 0};
+    }
+    return it->second.subscribe(subscriberID);
 }
 
-
-
-
-ReceiveResult niniBUS::receive(laneID_t laneID,subscribeID_t subscribeID ,std::string& message)
+ReceiveResult niniBUS::receive(
+    laneID_t laneID,
+    subscriberID_t subscriberID,
+    std::string& message)
 {
     message.clear();
-    //No lazy lane creation any more. Receiver should not mutate anything 
-    
+
     auto it = lanes_.find(laneID);
-    if(it == lanes_.end())
+    if (it == lanes_.end())
     {
-        return { ReceiveStatus::NO_CURSOR,0,0,0 };
+        return {ReceiveStatus::NO_CURSOR, 0, 0, 0};
     }
-    // Get reference to the lane in the map and check if it has content
-    lane& laneObj = it->second;
-    return laneObj.pop(subscribeID,message);
+    return it->second.pop(subscriberID, message);
 }
-bool niniBUS::unsubscribe(laneID_t laneID, subscribeID_t subscribeID)
+
+bool niniBUS::unsubscribe(
+    laneID_t laneID,
+    subscriberID_t subscriberID)
 {
     auto it = lanes_.find(laneID);
-    if(it == lanes_.end())
+    if (it == lanes_.end())
+    {
         return false;
-    lane& laneObj = it->second;
-    return laneObj.unsubscribe(subscribeID);
+    }
+    return it->second.unsubscribe(subscriberID);
 }

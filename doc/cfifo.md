@@ -323,10 +323,12 @@ That is the entire public menu. The chef refuses to serve `pop_front()`.
 SequenceType create_cursor(subscriber_type id);
 ```
 
-A new cursor is initialized at the current tail:
+A new cursor is initialized at the current tail. The function returns the
+cursor's next-read sequence:
 
 ```cpp
-cursor_map_.try_emplace(id, tail_sequence_);
+auto [it, inserted] = cursor_map_.try_emplace(id, tail_sequence_);
+return it->second.read_sequence;
 ```
 
 This means registration is **future-only**:
@@ -353,14 +355,9 @@ assert(result.sequence_id == 1);
 assert(message == "new");
 ```
 
-The return value is:
-
-| Return | Meaning |
-|---|---|
-| `1` | A new cursor was inserted. |
-| `0` | The ID was already registered. |
-
-The declared return type is `SequenceType`, but the current implementation returns the boolean `try_emplace(...).second` converted to that type. Therefore this value is an insertion flag, not the cursor position or tail sequence. Duplicate registration does not reset or change the existing cursor position.
+For a new cursor, the return value is the current tail. Duplicate registration
+is idempotent: it neither resets nor advances the existing cursor, and returns
+that cursor's actual next-read sequence rather than the current tail.
 
 Calling twice is not a subscription renewal ceremony. The first bookmark stays
 exactly where it was.
@@ -996,8 +993,8 @@ int main()
     constexpr nbus::cfifo<std::string>::subscriber_type alice = 100;
     constexpr nbus::cfifo<std::string>::subscriber_type bob = 200;
 
-    assert(queue.create_cursor(alice));
-    assert(queue.create_cursor(bob));
+    assert(queue.create_cursor(alice) == 0);
+    assert(queue.create_cursor(bob) == 0);
 
     auto firstWrite = queue.write("first");
     auto secondWrite = queue.write("second");
@@ -1133,12 +1130,14 @@ In short: bring a mutex. Optimism is not a synchronization primitive.
 - Reading an unknown subscriber returns `NO_CURSOR`; it does not throw.
 - Reading a caught-up subscriber returns `NO_PENDING_MESSAGE`; it does not
   throw.
-- Duplicate cursor registration returns numeric `0`; it does not throw merely
-  because the ID already exists. A new registration returns numeric `1`.
+- Duplicate cursor registration returns the existing cursor's next-read
+  sequence and does not reset it.
 - Removing an unknown cursor returns `false`.
 
-The API does not currently define a general exception-safety guarantee for
-user-defined `T` types whose assignment operations throw.
+`write()` assumes payload assignment succeeds. If assignment throws after a
+full queue has been reclaimed, cursor advancement and skip accounting from
+that reclamation are not rolled back. The API therefore does not provide the
+strong exception guarantee for user-defined `T` types with throwing assignment.
 
 If `T` throws during assignment, `cfifo` will not attempt couples counseling
 between your type and the standard library.
@@ -1167,7 +1166,6 @@ Every data structure has dreams larger than its current implementation.
 - Allocator customization is not exposed; the standard allocator has the job.
 - Move-only or non-default-constructible message types are not supported by the
   current vector-and-assignment storage model.
-- `create_cursor()` currently declares `SequenceType` but returns a numeric insertion flag (`1` or `0`); this should be normalized to an intentional API type in a future cleanup.
 - Sequence-number overflow behavior is not defined. A 64-bit sequence provides
   a very long runway, but infinity was outside the milestone.
 - Serialization and persistence are not provided. Restarting the process is

@@ -1,22 +1,32 @@
 #pragma once
+
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+
 #include "Lane.h"
 #include "status.h"
 
-
-
-
 class niniBUS
 {
-private:
-    std::unordered_map<laneID_t, lane> lanes_; // map for lane id and lane object
-
 public:
-    PublishResult publish(laneID_t, const std::string& message);
-    ReceiveResult receive(laneID_t laneID,subscribeID_t subscribeID ,std::string& message);
-    CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
-    SubscribeResult subscribe(laneID_t laneID, subscribeID_t subscribeID);
-    bool unsubscribe(laneID_t laneID, subscribeID_t subscribeID);
+    PublishResult publish(
+        laneID_t laneID,
+        const std::string& message);
+    ReceiveResult receive(
+        laneID_t laneID,
+        subscriberID_t subscriberID,
+        std::string& message);
+    CreateLaneStatus createLane(
+        laneID_t laneID,
+        std::uint32_t capacity);
+    SubscribeResult subscribe(
+        laneID_t laneID,
+        subscriberID_t subscriberID);
+    bool unsubscribe(
+        laneID_t laneID,
+        subscriberID_t subscriberID);
 
+private:
+    std::unordered_map<laneID_t, Lane> lanes_;
 };

@@ -49,7 +49,8 @@ neither lanes nor subscribers when topology is missing.
 The data-structure suite covers:
 
 - constructor state and invalid capacity;
-- cursor registration, duplicate detection, and containment;
+- cursor registration, returned next-read position, duplicate idempotence, and
+  containment;
 - cursor removal and negative removal;
 - read without registered cursor;
 - cursor start at current tail;
@@ -64,6 +65,7 @@ The data-structure suite covers:
 - reclaim after all cursors catch up;
 - reclaim with one slow cursor;
 - tied slow cursors;
+- minimum and maximum subscriber IDs;
 - uneven cursor progress;
 - skipped-message accumulation and reporting;
 - repeated reclaim and wraparound;
@@ -80,7 +82,7 @@ queue.credit() == queue.capacity() - queue.size()
 
 For every successful read:
 
-- output equals the message written at `sequenceID`;
+- output equals the message written at `sequenceId`;
 - pending count is relative to that cursor;
 - normal read advances no other cursor;
 - skipped count reflects reclaim-driven movement since the previous successful

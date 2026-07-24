@@ -96,8 +96,9 @@ class cfifo
         SequenceType create_cursor(subscriber_type id)
         {
             // New subscribers receive only messages written after registration.
-            cursor_map_.try_emplace(id, tail_sequence_);
-            return tail_sequence_;
+            const auto cursor =
+                cursor_map_.try_emplace(id, tail_sequence_);
+            return cursor.first->second.read_sequence;
         }
 
         bool contains_cursor(subscriber_type id) const

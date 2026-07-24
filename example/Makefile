@@ -1,5 +1,5 @@
-CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -MMD -MP
+CXX ?= g++
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -MMD -MP
 CPPFLAGS := -I..
 LDFLAGS := -L.. -lniniBUS
 
@@ -13,7 +13,6 @@ LIB := ../libniniBUS.a
 .PHONY: all build clean clean-meta run test cfifo-test debug
 
 all: $(TARGET) $(CFIFO_TARGET)
-	rm -f $(OBJS) $(DEPS)
 
 build: $(TARGET) $(CFIFO_TARGET)
 

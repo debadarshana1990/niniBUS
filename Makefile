@@ -1,6 +1,6 @@
 
-CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -MMD -MP
+CXX ?= g++
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -MMD -MP
 CPPFLAGS := -I.
 AR := ar
 ARFLAGS := rcs
@@ -16,7 +16,6 @@ DEPS := $(LIB_OBJS:.o=.d)
 .PHONY: all build lib library niniBUS clean clean-meta debug
 
 all: $(LIB)
-	rm -f $(LIB_OBJS) $(DEPS)
 
 build: $(LIB)
 

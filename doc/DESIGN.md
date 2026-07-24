@@ -13,8 +13,8 @@ concurrently without external synchronization.
 
 ```text
 niniBUS
-└── unordered_map<laneID_t, lane>
-    └── lane
+└── unordered_map<laneID_t, Lane>
+    └── Lane
         └── nbus::cfifo<string>
             ├── bounded shared message storage
             └── cursor map
@@ -27,7 +27,7 @@ niniBUS
 Owns lane topology and translates lane lookup results into public bus result
 types. It is responsible for explicit and publish-side lazy lane creation.
 
-### `lane`
+### `Lane`
 
 Adapts subscriber IDs and string messages to `nbus::cfifo<std::string>`.
 It does not maintain a second queue or duplicate messages per subscriber.
@@ -80,9 +80,11 @@ specific capacity.
 2. If absent, return `LaneNotExist`.
 3. Create a cursor at the current tail.
 4. If the cursor already exists, leave its position unchanged.
+5. Return the cursor's actual next-read sequence in `nextSequenceId`.
 
 Because registration begins at the tail, a subscriber observes future
-messages only.
+messages only. On duplicate subscription, `nextSequenceId` reports the
+existing cursor position rather than the lane tail.
 
 ### Receive
 
@@ -122,7 +124,7 @@ cursor would leave another cursor at the old minimum, so no capacity would be
 released.
 
 The trade-off is deliberate: publishers do not wait or fail because of a slow
-reader. Readers must inspect `SkippedMessages` if loss matters.
+reader. Readers must inspect `skippedMessages` if loss matters.
 
 ## Important Invariants
 

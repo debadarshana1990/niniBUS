@@ -130,10 +130,10 @@ communication path. Applications assign meaning to lane IDs.
 ```cpp
 PublishResult publish(laneID_t laneID, const std::string& message);
 ReceiveResult receive(laneID_t laneID,
-                      subscribeID_t subscriberID,
+                      subscriberID_t subscriberID,
                       std::string& message);
 CreateLaneStatus createLane(laneID_t laneID, uint32_t capacity);
-SubscribeResult subscribe(laneID_t laneID, subscribeID_t subscriberID);
+SubscribeResult subscribe(laneID_t laneID, subscriberID_t subscriberID);
 ```
 
 **Rationale**:
@@ -148,14 +148,15 @@ SubscribeResult subscribe(laneID_t laneID, subscribeID_t subscriberID);
 - `publish()` deliberately creates a missing lane with
   `DEFAULT_LANE_CAPACITY` for convenient default topology.
 - `subscribe()` explicitly registers subscriber cursors and fails when its lane
-  does not exist.
+  does not exist. Its `nextSequenceId` result reports the cursor's actual
+  next-read position for both new and duplicate subscriptions.
 
 **Consequences**:
 
 - The API is small and direct.
-- Publishers can read `PublishResult::Credit` without separately querying lane
+- Publishers can read `PublishResult::credit` without separately querying lane
   internals.
-- Receivers can read `ReceiveResult::PendingMessages` without separately
+- Receivers can read `ReceiveResult::pendingMessages` without separately
   querying lane internals.
 - `receive()` never creates a lane or subscriber.
 
@@ -400,8 +401,8 @@ receive has multiple possible outcomes.
 
 ```cpp
 struct PublishResult {
-    uint32_t Credit;
-    sequenceId_t sequenceID;
+    std::uint32_t credit;
+    sequenceId_t sequenceId;
 };
 
 enum class ReceiveStatus {
@@ -411,8 +412,10 @@ enum class ReceiveStatus {
 };
 
 struct ReceiveResult {
-    uint32_t PendingMessages;
-    ReceiveStatus Status;
+    ReceiveStatus status;
+    std::uint32_t pendingMessages;
+    sequenceId_t sequenceId;
+    std::uint64_t skippedMessages;
 };
 ```
 
@@ -429,8 +432,8 @@ struct ReceiveResult {
 **Consequences**:
 
 - Callers should check the result before using output data.
-- `PublishResult::Credit` describes remaining write capacity.
-- `ReceiveResult::PendingMessages` describes queued messages left after receive.
+- `PublishResult::credit` describes remaining write capacity.
+- `ReceiveResult::pendingMessages` describes queued messages left after receive.
 - Status values are limited to outcomes the implementation currently produces.
 
 **Revisit when**:
@@ -529,8 +532,8 @@ In the current implementation, credit is returned after `publish()`:
 
 ```cpp
 struct PublishResult {
-    uint32_t Credit;
-    sequenceId_t sequenceID;
+    std::uint32_t credit;
+    sequenceId_t sequenceId;
 };
 ```
 
@@ -547,7 +550,7 @@ struct PublishResult {
 **Consequences**:
 
 - Each lane has a capacity.
-- `PublishResult::Credit` reports remaining capacity after a publish attempt.
+- `PublishResult::credit` reports remaining capacity after a publish attempt.
 - Publishing to a full lane reclaims space and accepts the message.
 - Credit currently changes after publish and receive operations, but only
   `publish()` returns the credit value.
@@ -921,14 +924,14 @@ to the tail. Moving only one tied cursor could leave the same minimum in place
 and release no capacity.
 
 The skipped distance is accumulated for every affected cursor and returned
-through `SkippedMessages` with that subscriber's next successful read.
+through `skippedMessages` with that subscriber's next successful read.
 
 **Consequences**:
 
 - Storage remains bounded.
 - A stalled subscriber cannot block publishing indefinitely.
 - Slow subscribers can lose unread messages.
-- Applications must inspect `SkippedMessages` when loss matters.
+- Applications must inspect `skippedMessages` when loss matters.
 - This is neither lossless delivery nor publisher backpressure.
 - `PublishResult` has no status because the current write path always accepts
   the message.

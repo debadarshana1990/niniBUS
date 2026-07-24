@@ -1,34 +1,28 @@
 #pragma once
+
+#include <cstdint>
 #include <string>
-#include "status.h"
+
 #include "cfifo.h"
+#include "status.h"
 
+inline constexpr std::uint32_t DEFAULT_LANE_CAPACITY = 10;
 
-#define DEFAULT_LANE_CAPACITY (uint32_t)10 // Default capacity for lazily created lanes.
-
-class lane
+class Lane
 {
-
-    // Bounded message storage for this lane.
-    nbus::cfifo<std::string> content_;
-    uint32_t credit() const
-    {
-        return content_.capacity() - content_.size();
-    }
-    uint32_t getPendingMessage() const
-    {
-        return content_.size();
-    }
-    
 public:
-
-    explicit lane(uint32_t capacity = DEFAULT_LANE_CAPACITY) : content_(capacity) {}
-
+    explicit Lane(std::uint32_t capacity = DEFAULT_LANE_CAPACITY)
+        : content_(capacity)
+    {
+    }
 
     PublishResult push(const std::string& message);
-    ReceiveResult pop(subscribeID_t subscribeID,std::string& message);
-    SubscribeResult subscribe(subscribeID_t subscribeID);
-    bool unsubscribe(subscribeID_t subscribeID);
-   
-    
+    ReceiveResult pop(
+        subscriberID_t subscriberID,
+        std::string& message);
+    SubscribeResult subscribe(subscriberID_t subscriberID);
+    bool unsubscribe(subscriberID_t subscriberID);
+
+private:
+    nbus::cfifo<std::string> content_;
 };

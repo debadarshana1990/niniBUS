@@ -33,7 +33,7 @@ data, niniBUS keeps the new data.
 - A slow subscriber can therefore miss messages. We report the loss; we do not
   manufacture closure.
 - The next successful `receive()` reports the number skipped in
-  `SkippedMessages`.
+  `skippedMessages`.
 
 This is bounded, write-prioritized broadcast delivery. It is not lossless
 delivery and it is not backpressure. If every message is sacred, this is not
@@ -73,12 +73,12 @@ niniBUS();
 
 PublishResult publish(laneID_t lane_id, const std::string& message);
 ReceiveResult receive(laneID_t lane_id,
-                      subscribeID_t subscriber_id,
+                      subscriberID_t subscriber_id,
                       std::string& message);
 
 CreateLaneStatus createLane(laneID_t lane_id, uint32_t capacity);
-SubscribeResult subscribe(laneID_t lane_id, subscribeID_t subscriber_id);
-bool unsubscribe(laneID_t lane_id, subscribeID_t subscriber_id);
+SubscribeResult subscribe(laneID_t lane_id, subscriberID_t subscriber_id);
+bool unsubscribe(laneID_t lane_id, subscriberID_t subscriber_id);
 ```
 
 ## A Small, Surprisingly Functional Example
@@ -104,12 +104,12 @@ int main()
     const ReceiveResult a = bus.receive(10, 100, first);
     const ReceiveResult b = bus.receive(10, 200, second);
 
-    assert(a.Status == ReceiveStatus::SUCCESS);
-    assert(b.Status == ReceiveStatus::SUCCESS);
+    assert(a.status == ReceiveStatus::SUCCESS);
+    assert(b.status == ReceiveStatus::SUCCESS);
     assert(first == "hello");
     assert(second == "hello");
-    assert(a.sequenceID == sent.sequenceID);
-    assert(b.sequenceID == sent.sequenceID);
+    assert(a.sequenceId == sent.sequenceId);
+    assert(b.sequenceId == sent.sequenceId);
 
     assert(bus.unsubscribe(10, 100));
 }
@@ -123,17 +123,24 @@ do not get flashbacks.
 
 `PublishResult` contains:
 
-- `Credit`: free retained slots after the write.
-- `sequenceID`: logical sequence assigned to the written message. Together
+- `credit`: free retained slots after the write.
+- `sequenceId`: logical sequence assigned to the written message. Together
   with the lane ID, it uniquely identifies a message in a `niniBUS` instance.
 
 `ReceiveResult` contains:
 
-- `Status`: success, no pending message, or no cursor.
-- `PendingMessages`: messages still pending for that subscriber.
-- `sequenceID`: sequence read on success.
-- `SkippedMessages`: messages forcibly skipped since that subscriber's
+- `status`: success, no pending message, or no cursor.
+- `pendingMessages`: messages still pending for that subscriber.
+- `sequenceId`: sequence read on success.
+- `skippedMessages`: messages forcibly skipped since that subscriber's
   previous successful read. This is the “you missed a few episodes” counter.
+
+`SubscribeResult` contains:
+
+- `status`: successful registration or a missing lane.
+- `nextSequenceId`: the subscriber's current next-read sequence. A new
+  subscriber starts at the lane tail. A duplicate subscription is idempotent
+  and returns the existing cursor position without resetting it.
 
 ## Backpressure: Mind The Gap
 
@@ -148,31 +155,35 @@ makes room for the new message.
 
 The dashboard has three useful gauges:
 
-- `PublishResult::Credit` is lane-wide. It reports how many retained slots
+- `PublishResult::credit` is lane-wide. It reports how many retained slots
   remain after the publish. A low value means the lane is close to forcing
   slow subscribers forward. `0` means the successful write filled the last
   free slot; it does **not** mean the write failed. The next write still
   succeeds because niniBUS reclaims old data before storing the new message.
-- `ReceiveResult::PendingMessages` is subscriber-specific. It reports how many
+- `ReceiveResult::pendingMessages` is subscriber-specific. It reports how many
   currently available messages that subscriber still has to read after the
   current receive. A growing value means that subscriber should stop admiring
   the scenery and catch up.
-- `ReceiveResult::SkippedMessages` confirms that the write-prioritized policy
+- `ReceiveResult::skippedMessages` confirms that the write-prioritized policy
   already advanced that subscriber. Those old messages have left the station.
 
+When reclamation selects a slow subscriber, that subscriber advances to the
+current tail and loses its entire pending backlog at that moment—not merely
+the single oldest message.
+
 For example, a producer can pause, reduce its publishing rate, or reject
-upstream work when `Credit` reaches a chosen low-water mark. A consumer can
-drain more aggressively when `PendingMessages` crosses a chosen high-water
+upstream work when `credit` reaches a chosen low-water mark. A consumer can
+drain more aggressively when `pendingMessages` crosses a chosen high-water
 mark:
 
 ```cpp
 const PublishResult result = bus.publish(10, payload);
-if (result.Credit <= LOW_WATER_MARK) {
+if (result.credit <= LOW_WATER_MARK) {
     // Apply application-specific backpressure before publishing more.
 }
 
 const ReceiveResult received = bus.receive(10, subscriber_id, message);
-if (received.PendingMessages >= HIGH_WATER_MARK) {
+if (received.pendingMessages >= HIGH_WATER_MARK) {
     // Schedule this subscriber to drain the lane more aggressively.
 }
 ```
@@ -181,8 +192,12 @@ These values are feedback for application-managed backpressure, not a
 lossless guarantee. If the producer continues publishing, niniBUS continues
 accepting messages and slow subscribers may report skipped messages.
 
-`sequenceID` is monotonic and unique only within its lane. Use
-`(laneID, sequenceID)` as the message identifier; the same sequence value can
+Reclamation is lazy. Even after every subscriber consumes the retained
+messages, `credit` may remain `0` until the next publish reclaims that storage
+before writing.
+
+`sequenceId` is monotonic and unique only within its lane. Use
+`(laneID, sequenceId)` as the message identifier; the same sequence value can
 exist in two different lanes.
 
 ## Rules Of The Road
