@@ -1,9 +1,13 @@
 # niniBUS
 
+Messages need public transport too. `niniBUS` gives them lanes, sequence
+numbers, and a strict rule: the driver does not wait for the subscriber still
+looking for exact change.
+
 `niniBUS` is a small, single-threaded, in-process message bus built around
-named lanes and cursor-based broadcast delivery. Think public transit, except
-the buses are strings, the lanes are integers, and nobody has to pretend they
-didn't see you standing at the stop.
+named lanes and cursor-based broadcast delivery. The buses are strings, the
+lanes are integers, and slow passengers receive an exact count of the rides
+they missed.
 
 Each lane owns one bounded `nbus::cfifo<std::string>`. Subscribers do not own
 private message queues. Instead, every subscriber has a cursor into the lane's
