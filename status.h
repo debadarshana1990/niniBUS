@@ -1,24 +1,30 @@
 #pragma once
+
 #include <cstdint>
 
-enum class PublishStatus {
-    Ok,
-    LaneFull
-};
-enum class ReceiveStatus {
-    Ok,
-    LaneEmpty,
-    LazyLaneCreated
-};
-struct PublishResult 
+using laneID_t = std::uint32_t;
+using subscriberID_t = std::uint32_t;
+using sequenceId_t = std::uint64_t;
+
+enum class ReceiveStatus
 {
-    uint32_t Credit;
-    PublishStatus Status;
+    SUCCESS,
+    NO_PENDING_MESSAGE,
+    NO_CURSOR
 };
-struct ReceiveResult 
+
+struct PublishResult
 {
-    uint32_t PendingMessages;
-    ReceiveStatus Status;
+    std::uint32_t credit;
+    sequenceId_t sequenceId;
+};
+
+struct ReceiveResult
+{
+    ReceiveStatus status;
+    std::uint32_t pendingMessages;
+    sequenceId_t sequenceId;
+    std::uint64_t skippedMessages;
 };
 
 enum class CreateLaneStatus
@@ -26,4 +32,15 @@ enum class CreateLaneStatus
     Ok,
     LaneExists,
     InvalidCapacity
+};
+enum class SubscribeStatus
+{
+    Ok,
+    LaneNotExist
+};
+
+struct SubscribeResult
+{
+    SubscribeStatus status;
+    sequenceId_t nextSequenceId;
 };

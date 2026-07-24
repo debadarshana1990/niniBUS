@@ -1,24 +1,60 @@
 #include "Lane.h"
 
-PublishResult lane_t::push(const std::string& message)
+#include <stdexcept>
+
+namespace
 {
-    if(content_.push_back(message) == FIFOStatus::SUCCESS)
+
+ReceiveStatus to_receive_status(nbus::CFIFOReadStatus status)
+{
+    switch (status)
     {
-        return { credit(), PublishStatus::Ok };
+        case nbus::CFIFOReadStatus::SUCCESS:
+            return ReceiveStatus::SUCCESS;
+        case nbus::CFIFOReadStatus::NO_PENDING_MESSAGE:
+            return ReceiveStatus::NO_PENDING_MESSAGE;
+        case nbus::CFIFOReadStatus::NO_CURSOR:
+            return ReceiveStatus::NO_CURSOR;
     }
-    return { 0, PublishStatus::LaneFull };
+
+    throw std::logic_error("Unknown CFIFOReadStatus");
 }
 
-ReceiveResult lane_t::pop(std::string& message)
+}
+
+PublishResult Lane::push(const std::string& message)
 {
-    message.clear(); //clear the message string if any stray data
-    if (!content_.empty())
-    {
-        message = content_.front();
-        if (content_.pop_front() == FIFOStatus::SUCCESS)
-        {
-            return { getPendingMessage(),ReceiveStatus::Ok };
-        }
-    }
-    return { 0, ReceiveStatus::LaneEmpty };
+    const auto result = content_.write(message);
+    return {
+        result.credit,
+        static_cast<sequenceId_t>(result.sequence_id)
+    };
+}
+
+ReceiveResult Lane::pop(
+    subscriberID_t subscriberID,
+    std::string& message)
+{
+    const auto result = content_.read(subscriberID, message);
+    const auto status = to_receive_status(result.status);
+    return {
+        status,
+        result.pending_messages,
+        static_cast<sequenceId_t>(result.sequence_id),
+        static_cast<std::uint64_t>(result.skipped_messages)
+    };
+}
+
+SubscribeResult Lane::subscribe(subscriberID_t subscriberID)
+{
+    const auto sequenceId = content_.create_cursor(subscriberID);
+    return {
+        SubscribeStatus::Ok,
+        static_cast<sequenceId_t>(sequenceId)
+    };
+}
+
+bool Lane::unsubscribe(subscriberID_t subscriberID)
+{
+    return content_.remove_cursor(subscriberID);
 }

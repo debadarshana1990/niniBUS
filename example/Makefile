@@ -1,23 +1,26 @@
-CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -MMD -MP
+CXX ?= g++
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -MMD -MP
 CPPFLAGS := -I..
 LDFLAGS := -L.. -lniniBUS
 
-TARGET := hello
-SRCS := hello.cpp
+TARGET := niniBUS_test
+CFIFO_TARGET := cfifo_test
+SRCS := niniBUS_test.cpp
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(OBJS:.o=.d)
 LIB := ../libniniBUS.a
 
-.PHONY: all build clean clean-meta run test debug
+.PHONY: all build clean clean-meta run test cfifo-test debug
 
-all: $(TARGET)
-	rm -f $(OBJS) $(DEPS)
+all: $(TARGET) $(CFIFO_TARGET)
 
-build: $(TARGET)
+build: $(TARGET) $(CFIFO_TARGET)
 
 $(TARGET): $(OBJS) $(LIB)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+
+$(CFIFO_TARGET): cfifo_test.cpp ../cfifo.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ cfifo_test.cpp
 
 $(LIB):
 	$(MAKE) -C ..
@@ -28,7 +31,7 @@ $(LIB):
 -include $(DEPS)
 
 clean:
-	rm -f $(OBJS) $(DEPS) $(TARGET)
+	rm -f $(OBJS) $(DEPS) $(TARGET) $(CFIFO_TARGET) cfifo_test.d
 
 clean-meta:
 	rm -f $(OBJS) $(DEPS)
@@ -36,7 +39,10 @@ clean-meta:
 run: all
 	./$(TARGET)
 
-test: run
+test: run cfifo-test
+
+cfifo-test: $(CFIFO_TARGET)
+	./$(CFIFO_TARGET)
 
 debug: CXXFLAGS += -g -O0
 debug: clean build
