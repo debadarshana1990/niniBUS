@@ -19,7 +19,9 @@ The app lets you:
 - select a table row and inspect its mapped `Lane` object;
 - follow the Lane's `content_` member into a circular `cfifo` ring;
 - inspect physical slots, logical sequence IDs, head, tail, size, and credit;
-- register and inspect subscriber cursors;
+- register and inspect color-coded subscriber markers around the ring;
+- watch a marker advance after `receive()` or jump to the tail after reclaim;
+- inspect cursor-specific pending and skipped-message counts;
 - publish messages and inspect sequence IDs and credit;
 - receive independently for each subscriber;
 - watch physical circular-buffer slots, head, tail, size, and capacity;

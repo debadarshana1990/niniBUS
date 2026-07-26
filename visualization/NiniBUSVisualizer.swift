@@ -307,12 +307,20 @@ struct ArchitectureNode: View {
 struct RingBufferView: View {
     let lane: LaneState
     private let green = Color(red: 0.12, green: 0.42, blue: 0.31)
+    private let cursorColors: [Color] = [
+        Color(red: 0.09, green: 0.42, blue: 0.53),
+        Color(red: 0.48, green: 0.34, blue: 0.65),
+        Color(red: 0.63, green: 0.35, blue: 0.14),
+        Color(red: 0.23, green: 0.48, blue: 0.22),
+        Color(red: 0.64, green: 0.23, blue: 0.20)
+    ]
 
     var body: some View {
         GeometryReader { geometry in
             let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
-            let radius = min(geometry.size.width, geometry.size.height) * 0.35
+            let radius = min(geometry.size.width, geometry.size.height) * 0.29
             let retained = Set((0..<lane.size).map { lane.headSequence + UInt64($0) })
+            let orderedCursors = lane.cursors.keys.sorted()
 
             ZStack {
                 Circle()
@@ -332,7 +340,70 @@ struct RingBufferView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .position(center)
+                    .position(center)
+
+                ForEach(Array(orderedCursors.enumerated()), id: \.element) { offset, subscriberID in
+                    if let cursor = lane.cursors[subscriberID] {
+                        let slotIndex = Int(cursor.readSequence % UInt64(lane.capacity))
+                        let angle = -Double.pi / 2 + (2 * Double.pi * Double(slotIndex) / Double(lane.capacity))
+                        let sameSlot = orderedCursors.filter {
+                            guard let other = lane.cursors[$0] else { return false }
+                            return Int(other.readSequence % UInt64(lane.capacity)) == slotIndex
+                        }
+                        let collisionIndex = sameSlot.firstIndex(of: subscriberID) ?? 0
+                        let markerRadius = radius + 76 + CGFloat(collisionIndex * 34)
+                        let markerX = center.x + CGFloat(cos(angle)) * markerRadius
+                        let markerY = center.y + CGFloat(sin(angle)) * markerRadius
+                        let lineStartRadius = radius + 38
+                        let lineEndRadius = markerRadius - 31
+                        let lineStart = CGPoint(
+                            x: center.x + CGFloat(cos(angle)) * lineStartRadius,
+                            y: center.y + CGFloat(sin(angle)) * lineStartRadius
+                        )
+                        let lineEnd = CGPoint(
+                            x: center.x + CGFloat(cos(angle)) * lineEndRadius,
+                            y: center.y + CGFloat(sin(angle)) * lineEndRadius
+                        )
+                        let color = cursorColors[offset % cursorColors.count]
+                        let pending = lane.tailSequence - cursor.readSequence
+                        let caughtUp = cursor.readSequence == lane.tailSequence
+
+                        Path { path in
+                            path.move(to: lineStart)
+                            path.addLine(to: lineEnd)
+                        }
+                        .stroke(
+                            cursor.skippedMessages > 0 ? Color.red : color,
+                            style: StrokeStyle(lineWidth: 2, dash: cursor.skippedMessages > 0 ? [4, 3] : [])
+                        )
+
+                        VStack(spacing: 2) {
+                            Text("S\(subscriberID)")
+                                .font(.system(size: 10, weight: .black))
+                            Text(caughtUp ? "caught up" : "next \(cursor.readSequence)")
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            Text("pending \(pending)")
+                                .font(.system(size: 8, design: .monospaced))
+                            if cursor.skippedMessages > 0 {
+                                Text("SKIPPED \(cursor.skippedMessages)")
+                                    .font(.system(size: 8, weight: .black))
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(color)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(cursor.skippedMessages > 0 ? Color.red : color, lineWidth: 2)
+                        )
+                        .shadow(color: .black.opacity(0.10), radius: 4, y: 2)
+                        .position(x: markerX, y: markerY)
+                        .animation(.spring(response: 0.45, dampingFraction: 0.78), value: cursor.readSequence)
+                    }
+                }
 
                 ForEach(0..<lane.capacity, id: \.self) { index in
                     let angle = -Double.pi / 2 + (2 * Double.pi * Double(index) / Double(lane.capacity))
@@ -369,7 +440,7 @@ struct RingBufferView: View {
                 }
             }
         }
-        .frame(minHeight: 390)
+        .frame(minHeight: 500)
     }
 }
 
@@ -549,9 +620,18 @@ struct ContentView: View {
                         .frame(width: 255)
                     Panel(
                         title: "content_ → nbus::cfifo<std::string>",
-                        subtitle: "physical ring buffer + logical sequence"
+                        subtitle: "physical slots + sequence IDs + subscriber markers"
                     ) {
-                        RingBufferView(lane: lane)
+                        VStack(spacing: 8) {
+                            RingBufferView(lane: lane)
+                            HStack(spacing: 16) {
+                                Label("Marker points to next read", systemImage: "person.crop.circle")
+                                Label("receive() moves one marker", systemImage: "arrow.forward.circle")
+                                Label("reclaim jumps slow markers to tail", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
+                            }
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 HStack(alignment: .top, spacing: 16) {
@@ -704,11 +784,16 @@ struct ContentView: View {
         Panel(title: "Subscriber cursors", subtitle: "next unread sequence") {
             if let lane = model.selectedLane, !lane.cursors.isEmpty {
                 VStack(spacing: 9) {
-                    ForEach(lane.cursors.keys.sorted(), id: \.self) { id in
+                    ForEach(Array(lane.cursors.keys.sorted().enumerated()), id: \.element) { offset, id in
                         if let cursor = lane.cursors[id] {
                             let pending = lane.tailSequence - cursor.readSequence
+                            let markerColors: [Color] = [.blue, .purple, .brown, .green, .red]
+                            let markerColor = markerColors[offset % markerColors.count]
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {
+                                    Circle()
+                                        .fill(markerColor)
+                                        .frame(width: 9, height: 9)
                                     Text("subscriber \(id)").fontWeight(.bold)
                                     Spacer()
                                     Text("next \(cursor.readSequence)")
@@ -719,10 +804,14 @@ struct ContentView: View {
                                 HStack {
                                     Text("pending \(pending)")
                                     Spacer()
-                                    Text("unreported skips \(cursor.skippedMessages)")
+                                    Text(
+                                        cursor.skippedMessages > 0
+                                            ? "⚠ skipped \(cursor.skippedMessages)"
+                                            : "skipped 0"
+                                    )
+                                    .foregroundStyle(cursor.skippedMessages > 0 ? .red : .secondary)
                                 }
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
                             }
                             .padding(10)
                             .background(Color.white)
