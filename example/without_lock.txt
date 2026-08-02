@@ -1,0 +1,47 @@
+./performance_test
+niniBUS 1024-slot performance test (200 trials, 256-byte payload)
+
+Average operation latency (no reclamation)
+  One write: 40.95 ns
+  One read:  30.24 ns
+  Checksum:  209510400
+
+Time to fill all 1024 slots
+  Average total: 35.05 us
+  Write latency as the buffer fills (includes clock-call overhead):
+    Slots         Average ns/write
+       1- 128           45.21
+     129- 256           45.34
+     257- 384           45.04
+     385- 512           45.05
+     513- 640           45.46
+     641- 768           45.63
+     769- 896           45.16
+     897-1024           45.24
+
+Reclamation latency
+  Timed operation is write #1025 into a full buffer.
+  "Typical" is the median result. P95 means 95% of writes completed within that time.
+  Times are nanoseconds; 1000 ns = 1 microsecond.
+
+    Scenario                       Subs     Typical         P95     vs. 1 sub
+    one slow subscriber               1       41.00       42.00          1.00x
+    multiple, same cursor             2       42.00       83.00          1.02x
+    multiple, same cursor             8       83.00      125.00          2.02x
+    multiple, same cursor            32      209.00      250.00          5.10x
+    multiple, same cursor           128      750.00      833.00         18.29x
+    multiple, same cursor           256     1375.00     1417.00         33.54x
+    multiple, varied cursors          2       42.00       42.00          1.02x
+    multiple, varied cursors          8       42.00       84.00          1.02x
+    multiple, varied cursors         32      208.00      625.00          5.07x
+    multiple, varied cursors        128      666.00      791.00         16.24x
+    multiple, varied cursors        256     1209.00     1375.00         29.49x
+
+  Scenario meaning:
+    one slow subscriber: reclaim advances that subscriber.
+    same cursor:         reclaim advances every tied subscriber.
+    varied cursors:      reclaim advances only the slowest; faster cursors stay unchanged.
+
+  Ignore occasional minimum values of 0 ns from older output; a single operation can be
+  shorter than the clock resolution. Median and P95 are more useful for comparison.
+

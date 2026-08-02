@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <string>
+#include <mutex>
+
 
 #include "cfifo.h"
 #include "status.h"
@@ -25,4 +27,5 @@ public:
 
 private:
     nbus::cfifo<std::string> content_;
+    std::mutex mutex_;
 };

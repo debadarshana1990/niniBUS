@@ -33,6 +33,7 @@ niniBUS: lib
 
 clean:
 	rm -f $(LIB_OBJS) $(DEPS) $(LIB)
+	$(MAKE) -C example clean
 
 clean-meta:
 	rm -f $(LIB_OBJS) $(DEPS)

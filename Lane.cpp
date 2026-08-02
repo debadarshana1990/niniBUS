@@ -24,7 +24,11 @@ ReceiveStatus to_receive_status(nbus::CFIFOReadStatus status)
 
 PublishResult Lane::push(const std::string& message)
 {
-    const auto result = content_.write(message);
+    nbus::CFIFOWriteResult result;
+    {   
+    std::lock_guard<std::mutex> lock(mutex_);
+        result = content_.write(message);
+    }
     return {
         result.credit,
         static_cast<sequenceId_t>(result.sequence_id)
@@ -35,7 +39,11 @@ ReceiveResult Lane::pop(
     subscriberID_t subscriberID,
     std::string& message)
 {
-    const auto result = content_.read(subscriberID, message);
+    nbus::CFIFOReadResult result;
+    {   
+    std::lock_guard<std::mutex> lock(mutex_);
+        result = content_.read(subscriberID, message);
+    }
     const auto status = to_receive_status(result.status);
     return {
         status,
@@ -47,6 +55,7 @@ ReceiveResult Lane::pop(
 
 SubscribeResult Lane::subscribe(subscriberID_t subscriberID)
 {
+
     const auto sequenceId = content_.create_cursor(subscriberID);
     return {
         SubscribeStatus::Ok,

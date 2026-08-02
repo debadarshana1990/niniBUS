@@ -1,0 +1,18 @@
+niniBUS combined profiling
+1024-slot lanes, 256-byte payload, 1000000 messages per lane
+
+1. Without threads: publish first, then consume
+Benchmark                    Lanes      Subs     Time(s)     Publishes/s      Received       Skipped
+----------------------------------------------------------------------------------------------------
+one lane, one subscriber         1         1       0.033        30528796           576        999424
+one lane, 8 subscribers          1         8       0.024        42078098          4608       7995392
+4 lanes, one subscriber          4         1       0.089        44855642          2304       3997696
+4 lanes, 8 subscribers           4         8       0.089        44970579         18432      31981568
+
+2. With threads: one producer and one consumer
+Benchmark                    Lanes      Subs     Time(s)     Publishes/s      Received       Skipped
+----------------------------------------------------------------------------------------------------
+one lane, one subscriber         1         1       0.041        24106163         10477        989523
+one lane, 8 subscribers          1         8       0.051        19581447        103530       7896470
+4 lanes, one subscriber          4         1       0.162        24623914       1216820       2783180
+4 lanes, 8 subscribers           4         8       0.736         5437533       7481871      24518129
