@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <iterator>
 #include <stdexcept>
@@ -42,7 +43,9 @@ class cfifo
 
         explicit cfifo(SizeType capacity)
             : capacity_(validate_capacity(capacity)),
+#ifndef NBUS_CFIFO_USE_ARRAY
               buffer_(capacity_),
+#endif
               size_(0),
               head_sequence_(0),
               tail_sequence_(0)
@@ -161,7 +164,11 @@ class cfifo
         };
 
         SizeType capacity_;  // Fixed number of physical buffer slots.
+#ifdef NBUS_CFIFO_USE_ARRAY
+        std::array<T, 10000000> buffer_;
+#else
         std::vector<T> buffer_;
+#endif
         // Subscriber ID -> next unread global sequence.
         std::unordered_map<subscriber_type, CursorState> cursor_map_;
         SizeType size_;  // Number of retained shared-buffer slots.

@@ -1,0 +1,47 @@
+2026-08-09T21:26:08-04:00
+Running ./cfifo_vector_bm
+Run on (8 X 24 MHz CPU s)
+Load Average: 1.91, 2.08, 2.36
+name,iterations,real_time,cpu_time,time_unit,bytes_per_second,items_per_second,label,error_occurred,error_message,"time_per_write"
+"BM_cfifo_write/writes:1_mean",20,12.6434,12.0283,ns,2.13365e+10,8.33456e+07,,,,1.20283e-08
+"BM_cfifo_write/writes:1_median",20,12.4346,11.8508,ns,2.16027e+10,8.43857e+07,,,,1.18508e-08
+"BM_cfifo_write/writes:1_stddev",20,1.09209,0.62557,ns,1.08141e+09,4.22426e+06,,,,6.2557e-10
+"BM_cfifo_write/writes:1_cv",20,0.086376,0.052008,,0.0506837,0.0506837,,,,0.052008
+"BM_cfifo_write/writes:10_mean",20,132.669,126.165,ns,2.03167e+10,7.93621e+07,,,,1.26165e-08
+"BM_cfifo_write/writes:10_median",20,128.609,124.051,ns,2.06367e+10,8.06121e+07,,,,1.24051e-08
+"BM_cfifo_write/writes:10_stddev",20,10.3582,4.67468,ns,7.34373e+08,2.86864e+06,,,,4.67468e-10
+"BM_cfifo_write/writes:10_cv",20,0.0780753,0.0370521,,0.0361463,0.0361463,,,,0.0370521
+"BM_cfifo_write/writes:100_mean",20,1239.18,1208.21,ns,2.12037e+10,8.2827e+07,,,,1.20821e-08
+"BM_cfifo_write/writes:100_median",20,1237.36,1211.72,ns,2.1127e+10,8.25273e+07,,,,1.21172e-08
+"BM_cfifo_write/writes:100_stddev",20,53.9743,33.6594,ns,5.80106e+08,2.26604e+06,,,,3.36594e-10
+"BM_cfifo_write/writes:100_cv",20,0.0435565,0.0278589,,0.0273587,0.0273587,,,,0.0278589
+"BM_cfifo_write/writes:4_mean",20,53.5112,50.4104,ns,2.03617e+10,7.95381e+07,,,,1.26026e-08
+"BM_cfifo_write/writes:4_median",20,50.6014,49.6345,ns,2.06308e+10,8.05891e+07,,,,1.24086e-08
+"BM_cfifo_write/writes:4_stddev",20,5.732,2.57727,ns,9.99471e+08,3.90418e+06,,,,6.44317e-10
+"BM_cfifo_write/writes:4_cv",20,0.107118,0.0511257,,0.0490857,0.0490857,,,,0.0511257
+"BM_cfifo_write/writes:4096_mean",20,54768.3,53338.8,ns,1.97331e+10,7.70823e+07,,,,1.30222e-08
+"BM_cfifo_write/writes:4096_median",20,55855.2,52956.5,ns,1.98155e+10,7.74044e+07,,,,1.29288e-08
+"BM_cfifo_write/writes:4096_stddev",20,4470.37,3360.95,ns,1.24133e+09,4.84896e+06,,,,8.20544e-10
+"BM_cfifo_write/writes:4096_cv",20,0.0816233,0.0630114,,0.0629063,0.0629063,,,,0.0630114
+"BM_cfifo_write/writes:4194304_mean",20,6.19043e+07,5.9595e+07,ns,1.80215e+10,7.03964e+07,,,,1.42085e-08
+"BM_cfifo_write/writes:4194304_median",20,6.0427e+07,5.97721e+07,ns,1.7964e+10,7.01717e+07,,,,1.42508e-08
+"BM_cfifo_write/writes:4194304_stddev",20,6.33257e+06,928596,ns,2.80158e+08,1.09437e+06,,,,2.21395e-10
+"BM_cfifo_write/writes:4194304_cv",20,0.102296,0.0155818,,0.0155458,0.0155458,,,,0.0155818
+"BM_cfifo_write_BigO",,14.7591,14.2085,N,,,,,,
+"BM_cfifo_write_RMS",,2.44007e-10,3.71677e-11,,,,,,,
+"BM_cfifo_read/messages:1_mean",20,28.4402,27.6053,ns,9.28903e+09,3.62853e+07,,,,
+"BM_cfifo_read/messages:1_median",20,28.3416,27.7613,ns,9.22147e+09,3.60214e+07,,,,
+"BM_cfifo_read/messages:1_stddev",20,1.61775,1.15033,ns,3.90545e+08,1.52557e+06,,,,
+"BM_cfifo_read/messages:1_cv",20,0.0568825,0.0416708,,0.0420437,0.0420437,,,,
+"BM_cfifo_read/messages:10_mean",20,301.789,295.036,ns,8.68672e+09,3.39325e+07,,,,
+"BM_cfifo_read/messages:10_median",20,297.191,294.017,ns,8.70699e+09,3.40117e+07,,,,
+"BM_cfifo_read/messages:10_stddev",20,21.4644,10.5212,ns,2.89891e+08,1.13239e+06,,,,
+"BM_cfifo_read/messages:10_cv",20,0.0711239,0.0356606,,0.0333718,0.0333718,,,,
+"BM_cfifo_read/messages:100_mean",20,2860.89,2828.87,ns,9.05293e+09,3.5363e+07,,,,
+"BM_cfifo_read/messages:100_median",20,2846.24,2834.89,ns,9.03034e+09,3.52748e+07,,,,
+"BM_cfifo_read/messages:100_stddev",20,80.4724,54.9502,ns,1.82492e+08,712860,,,,
+"BM_cfifo_read/messages:100_cv",20,0.0281284,0.0194248,,0.0201584,0.0201584,,,,
+"BM_cfifo_read/messages:4_mean",20,104.155,103.807,ns,9.86754e+09,3.85451e+07,,,,
+"BM_cfifo_read/messages:4_median",20,103.792,103.401,ns,9.90321e+09,3.86844e+07,,,,
+"BM_cfifo_read/messages:4_stddev",20,1.98227,1.89744,ns,1.79463e+08,701029,,,,
+"BM_cfifo_read/messages:4_cv",20,0.019032,0.0182785,,0.0181872,0.0181872,,,,

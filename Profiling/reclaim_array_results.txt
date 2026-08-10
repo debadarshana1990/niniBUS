@@ -1,0 +1,92 @@
+Unable to determine clock rate from sysctl: hw.cpufrequency: No such file or directory
+This does not affect benchmark measurements, only the metadata output.
+***WARNING*** Failed to set thread affinity. Estimated CPU frequency may be incorrect.
+2026-08-09T21:27:52-04:00
+Running ./reclaim_array_bm
+Run on (8 X 24 MHz CPU s)
+Load Average: 3.56, 2.61, 2.53
+-------------------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                                 Time             CPU   Iterations UserCounters...
+-------------------------------------------------------------------------------------------------------------------------------------------
+BM_reclaim/no_subscribers/iterations:1000/manual_time_mean                             40.5 ns        31959 ns           20 items_per_second=30.6067M/s time_per_reclaiming_write=40.5107ns
+BM_reclaim/no_subscribers/iterations:1000/manual_time_median                           29.8 ns        31690 ns           20 items_per_second=33.5764M/s time_per_reclaiming_write=29.783ns
+BM_reclaim/no_subscribers/iterations:1000/manual_time_stddev                           38.2 ns         1635 ns           20 items_per_second=7.40914M/s time_per_reclaiming_write=38.2194ns
+BM_reclaim/no_subscribers/iterations:1000/manual_time_cv                              94.34 %          5.11 %            20 items_per_second=24.21% time_per_reclaiming_write=94.34%
+BM_reclaim/one_head/iterations:1000/manual_time_mean                                   34.9 ns        31122 ns           20 items_per_second=29.235M/s time_per_reclaiming_write=34.9055ns
+BM_reclaim/one_head/iterations:1000/manual_time_median                                 33.2 ns        31108 ns           20 items_per_second=30.1196M/s time_per_reclaiming_write=33.201ns
+BM_reclaim/one_head/iterations:1000/manual_time_stddev                                 5.82 ns          552 ns           20 items_per_second=3.75747M/s time_per_reclaiming_write=5.82206ns
+BM_reclaim/one_head/iterations:1000/manual_time_cv                                    16.68 %          1.77 %            20 items_per_second=12.85% time_per_reclaiming_write=16.68%
+BM_reclaim/one_mid/iterations:1000/manual_time_mean                                    28.3 ns        40521 ns           20 items_per_second=35.5703M/s time_per_reclaiming_write=28.2729ns
+BM_reclaim/one_mid/iterations:1000/manual_time_median                                  27.7 ns        40650 ns           20 items_per_second=36.1536M/s time_per_reclaiming_write=27.66ns
+BM_reclaim/one_mid/iterations:1000/manual_time_stddev                                  2.25 ns          556 ns           20 items_per_second=2.66239M/s time_per_reclaiming_write=2.2485ns
+BM_reclaim/one_mid/iterations:1000/manual_time_cv                                      7.95 %          1.37 %            20 items_per_second=7.48% time_per_reclaiming_write=7.95%
+BM_reclaim/one_tail_minus_1/iterations:1000/manual_time_mean                           37.4 ns        47668 ns           20 items_per_second=29.4202M/s time_per_reclaiming_write=37.3552ns
+BM_reclaim/one_tail_minus_1/iterations:1000/manual_time_median                         31.4 ns        47549 ns           20 items_per_second=31.9503M/s time_per_reclaiming_write=31.36ns
+BM_reclaim/one_tail_minus_1/iterations:1000/manual_time_stddev                         13.7 ns          736 ns           20 items_per_second=7.90185M/s time_per_reclaiming_write=13.6614ns
+BM_reclaim/one_tail_minus_1/iterations:1000/manual_time_cv                            36.57 %          1.54 %            20 items_per_second=26.86% time_per_reclaiming_write=36.57%
+BM_reclaim/one_tail/iterations:1000/manual_time_mean                                   37.7 ns        48787 ns           20 items_per_second=28.8761M/s time_per_reclaiming_write=37.7451ns
+BM_reclaim/one_tail/iterations:1000/manual_time_median                                 34.9 ns        48068 ns           20 items_per_second=28.6694M/s time_per_reclaiming_write=34.949ns
+BM_reclaim/one_tail/iterations:1000/manual_time_stddev                                 13.2 ns         2031 ns           20 items_per_second=7.58435M/s time_per_reclaiming_write=13.1701ns
+BM_reclaim/one_tail/iterations:1000/manual_time_cv                                    34.89 %          4.16 %            20 items_per_second=26.27% time_per_reclaiming_write=34.89%
+BM_reclaim/ten_one_at_head/iterations:1000/manual_time_mean                             120 ns       180242 ns           20 items_per_second=9.80072M/s time_per_reclaiming_write=119.89ns
+BM_reclaim/ten_one_at_head/iterations:1000/manual_time_median                           122 ns       178500 ns           20 items_per_second=8.40871M/s time_per_reclaiming_write=121.647ns
+BM_reclaim/ten_one_at_head/iterations:1000/manual_time_stddev                          45.7 ns         6472 ns           20 items_per_second=4.33158M/s time_per_reclaiming_write=45.6936ns
+BM_reclaim/ten_one_at_head/iterations:1000/manual_time_cv                             38.11 %          3.59 %            20 items_per_second=44.20% time_per_reclaiming_write=38.11%
+BM_reclaim/ten_one_at_mid/iterations:1000/manual_time_mean                             90.5 ns       190068 ns           20 items_per_second=14.0135M/s time_per_reclaiming_write=90.5262ns
+BM_reclaim/ten_one_at_mid/iterations:1000/manual_time_median                           82.4 ns       185265 ns           20 items_per_second=12.4079M/s time_per_reclaiming_write=82.394ns
+BM_reclaim/ten_one_at_mid/iterations:1000/manual_time_stddev                           50.8 ns        16151 ns           20 items_per_second=6.36136M/s time_per_reclaiming_write=50.7611ns
+BM_reclaim/ten_one_at_mid/iterations:1000/manual_time_cv                              56.07 %          8.50 %            20 items_per_second=45.39% time_per_reclaiming_write=56.07%
+BM_reclaim/ten_one_at_tail_minus_1/iterations:1000/manual_time_mean                    53.9 ns       188274 ns           20 items_per_second=19.2494M/s time_per_reclaiming_write=53.95ns
+BM_reclaim/ten_one_at_tail_minus_1/iterations:1000/manual_time_median                  49.6 ns       187883 ns           20 items_per_second=20.1603M/s time_per_reclaiming_write=49.6085ns
+BM_reclaim/ten_one_at_tail_minus_1/iterations:1000/manual_time_stddev                  12.2 ns         3496 ns           20 items_per_second=3.39114M/s time_per_reclaiming_write=12.1985ns
+BM_reclaim/ten_one_at_tail_minus_1/iterations:1000/manual_time_cv                     22.61 %          1.86 %            20 items_per_second=17.62% time_per_reclaiming_write=22.61%
+BM_reclaim/ten_all_at_tail/iterations:1000/manual_time_mean                            33.4 ns       188297 ns           20 items_per_second=30.6361M/s time_per_reclaiming_write=33.3777ns
+BM_reclaim/ten_all_at_tail/iterations:1000/manual_time_median                          31.1 ns       187896 ns           20 items_per_second=32.1119M/s time_per_reclaiming_write=31.142ns
+BM_reclaim/ten_all_at_tail/iterations:1000/manual_time_stddev                          6.02 ns         2525 ns           20 items_per_second=4.02035M/s time_per_reclaiming_write=6.02429ns
+BM_reclaim/ten_all_at_tail/iterations:1000/manual_time_cv                             18.05 %          1.34 %            20 items_per_second=13.12% time_per_reclaiming_write=18.05%
+BM_reclaim/ten_all_at_head/iterations:1000/manual_time_mean                             115 ns        31204 ns           20 items_per_second=8.70961M/s time_per_reclaiming_write=115.104ns
+BM_reclaim/ten_all_at_head/iterations:1000/manual_time_median                           113 ns        31157 ns           20 items_per_second=8.862M/s time_per_reclaiming_write=112.842ns
+BM_reclaim/ten_all_at_head/iterations:1000/manual_time_stddev                          6.08 ns          724 ns           20 items_per_second=435.638k/s time_per_reclaiming_write=6.08069ns
+BM_reclaim/ten_all_at_head/iterations:1000/manual_time_cv                              5.28 %          2.32 %            20 items_per_second=5.00% time_per_reclaiming_write=5.28%
+BM_reclaim/ten_all_at_mid/iterations:1000/manual_time_mean                             62.2 ns       115187 ns           20 items_per_second=16.4812M/s time_per_reclaiming_write=62.2288ns
+BM_reclaim/ten_all_at_mid/iterations:1000/manual_time_median                           58.1 ns       114526 ns           20 items_per_second=17.2202M/s time_per_reclaiming_write=58.0795ns
+BM_reclaim/ten_all_at_mid/iterations:1000/manual_time_stddev                           12.2 ns         2353 ns           20 items_per_second=2.23307M/s time_per_reclaiming_write=12.2192ns
+BM_reclaim/ten_all_at_mid/iterations:1000/manual_time_cv                              19.64 %          2.04 %            20 items_per_second=13.55% time_per_reclaiming_write=19.64%
+BM_reclaim/ten_head_mid_tail/iterations:1000/manual_time_mean                          60.4 ns       156356 ns           20 items_per_second=17.384M/s time_per_reclaiming_write=60.3542ns
+BM_reclaim/ten_head_mid_tail/iterations:1000/manual_time_median                        58.4 ns       155845 ns           20 items_per_second=17.1326M/s time_per_reclaiming_write=58.3705ns
+BM_reclaim/ten_head_mid_tail/iterations:1000/manual_time_stddev                        14.2 ns         3238 ns           20 items_per_second=3.70924M/s time_per_reclaiming_write=14.2311ns
+BM_reclaim/ten_head_mid_tail/iterations:1000/manual_time_cv                           23.58 %          2.07 %            20 items_per_second=21.34% time_per_reclaiming_write=23.58%
+BM_reclaim_subscriber_scaling/subscribers:1/iterations:1000/manual_time_mean           34.3 ns        31271 ns           20 items_per_second=29.2893M/s time_per_reclaiming_write=34.3379ns
+BM_reclaim_subscriber_scaling/subscribers:1/iterations:1000/manual_time_median         33.8 ns        31115 ns           20 items_per_second=29.5903M/s time_per_reclaiming_write=33.795ns
+BM_reclaim_subscriber_scaling/subscribers:1/iterations:1000/manual_time_stddev         2.84 ns         1658 ns           20 items_per_second=2.14084M/s time_per_reclaiming_write=2.839ns
+BM_reclaim_subscriber_scaling/subscribers:1/iterations:1000/manual_time_cv             8.27 %          5.30 %            20 items_per_second=7.31% time_per_reclaiming_write=8.27%
+BM_reclaim_subscriber_scaling/subscribers:2/iterations:1000/manual_time_mean           48.6 ns        30719 ns           20 items_per_second=21.597M/s time_per_reclaiming_write=48.6073ns
+BM_reclaim_subscriber_scaling/subscribers:2/iterations:1000/manual_time_median         45.1 ns        30544 ns           20 items_per_second=22.1878M/s time_per_reclaiming_write=45.071ns
+BM_reclaim_subscriber_scaling/subscribers:2/iterations:1000/manual_time_stddev         16.5 ns          715 ns           20 items_per_second=3.22149M/s time_per_reclaiming_write=16.5042ns
+BM_reclaim_subscriber_scaling/subscribers:2/iterations:1000/manual_time_cv            33.95 %          2.33 %            20 items_per_second=14.92% time_per_reclaiming_write=33.95%
+BM_reclaim_subscriber_scaling/subscribers:4/iterations:1000/manual_time_mean           61.4 ns        30958 ns           20 items_per_second=16.3562M/s time_per_reclaiming_write=61.3794ns
+BM_reclaim_subscriber_scaling/subscribers:4/iterations:1000/manual_time_median         62.9 ns        30603 ns           20 items_per_second=15.889M/s time_per_reclaiming_write=62.94ns
+BM_reclaim_subscriber_scaling/subscribers:4/iterations:1000/manual_time_stddev         3.85 ns         1136 ns           20 items_per_second=1.07886M/s time_per_reclaiming_write=3.84724ns
+BM_reclaim_subscriber_scaling/subscribers:4/iterations:1000/manual_time_cv             6.27 %          3.67 %            20 items_per_second=6.60% time_per_reclaiming_write=6.27%
+BM_reclaim_subscriber_scaling/subscribers:8/iterations:1000/manual_time_mean           94.6 ns        30809 ns           20 items_per_second=10.5841M/s time_per_reclaiming_write=94.597ns
+BM_reclaim_subscriber_scaling/subscribers:8/iterations:1000/manual_time_median         93.9 ns        30833 ns           20 items_per_second=10.6522M/s time_per_reclaiming_write=93.8775ns
+BM_reclaim_subscriber_scaling/subscribers:8/iterations:1000/manual_time_stddev         3.42 ns          675 ns           20 items_per_second=378.062k/s time_per_reclaiming_write=3.41707ns
+BM_reclaim_subscriber_scaling/subscribers:8/iterations:1000/manual_time_cv             3.61 %          2.19 %            20 items_per_second=3.57% time_per_reclaiming_write=3.61%
+BM_reclaim_subscriber_scaling/subscribers:16/iterations:1000/manual_time_mean           157 ns        31453 ns           20 items_per_second=6.37168M/s time_per_reclaiming_write=157.119ns
+BM_reclaim_subscriber_scaling/subscribers:16/iterations:1000/manual_time_median         157 ns        31607 ns           20 items_per_second=6.3773M/s time_per_reclaiming_write=156.807ns
+BM_reclaim_subscriber_scaling/subscribers:16/iterations:1000/manual_time_stddev        5.36 ns          627 ns           20 items_per_second=218.638k/s time_per_reclaiming_write=5.35671ns
+BM_reclaim_subscriber_scaling/subscribers:16/iterations:1000/manual_time_cv            3.41 %          1.99 %            20 items_per_second=3.43% time_per_reclaiming_write=3.41%
+BM_reclaim_subscriber_scaling/subscribers:32/iterations:1000/manual_time_mean           296 ns        32599 ns           20 items_per_second=3.37731M/s time_per_reclaiming_write=296.311ns
+BM_reclaim_subscriber_scaling/subscribers:32/iterations:1000/manual_time_median         295 ns        32661 ns           20 items_per_second=3.3952M/s time_per_reclaiming_write=294.533ns
+BM_reclaim_subscriber_scaling/subscribers:32/iterations:1000/manual_time_stddev        8.31 ns          774 ns           20 items_per_second=92.9916k/s time_per_reclaiming_write=8.30535ns
+BM_reclaim_subscriber_scaling/subscribers:32/iterations:1000/manual_time_cv            2.80 %          2.37 %            20 items_per_second=2.75% time_per_reclaiming_write=2.80%
+BM_reclaim_subscriber_scaling/subscribers:64/iterations:1000/manual_time_mean           575 ns        33819 ns           20 items_per_second=1.74145M/s time_per_reclaiming_write=574.97ns
+BM_reclaim_subscriber_scaling/subscribers:64/iterations:1000/manual_time_median         577 ns        33715 ns           20 items_per_second=1.73281M/s time_per_reclaiming_write=577.097ns
+BM_reclaim_subscriber_scaling/subscribers:64/iterations:1000/manual_time_stddev        20.8 ns          662 ns           20 items_per_second=64.8221k/s time_per_reclaiming_write=20.818ns
+BM_reclaim_subscriber_scaling/subscribers:64/iterations:1000/manual_time_cv            3.62 %          1.96 %            20 items_per_second=3.72% time_per_reclaiming_write=3.62%
+BM_reclaim_subscriber_scaling/subscribers:128/iterations:1000/manual_time_mean         1515 ns        36987 ns           20 items_per_second=797.199k/s time_per_reclaiming_write=1.51547us
+BM_reclaim_subscriber_scaling/subscribers:128/iterations:1000/manual_time_median       1200 ns        37055 ns           20 items_per_second=833.379k/s time_per_reclaiming_write=1.19994us
+BM_reclaim_subscriber_scaling/subscribers:128/iterations:1000/manual_time_stddev       1396 ns          713 ns           20 items_per_second=159.266k/s time_per_reclaiming_write=1.3955us
+BM_reclaim_subscriber_scaling/subscribers:128/iterations:1000/manual_time_cv          92.08 %          1.93 %            20 items_per_second=19.98% time_per_reclaiming_write=92.08%
+BM_reclaim_subscriber_scaling/iterations:1000/manual_time_BigO                        11.17 N        407.79 N    
+BM_reclaim_subscriber_scaling/iterations:1000/manual_time_RMS                           139 %            76 %    
