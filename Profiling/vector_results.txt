@@ -1,0 +1,52 @@
+Unable to determine clock rate from sysctl: hw.cpufrequency: No such file or directory
+This does not affect benchmark measurements, only the metadata output.
+***WARNING*** Failed to set thread affinity. Estimated CPU frequency may be incorrect.
+2026-08-09T21:26:08-04:00
+Running ./cfifo_vector_bm
+Run on (8 X 24 MHz CPU s)
+Load Average: 1.91, 2.08, 2.36
+---------------------------------------------------------------------------------------------------------
+Benchmark                                               Time             CPU   Iterations UserCounters...
+---------------------------------------------------------------------------------------------------------
+BM_cfifo_write/writes:1_mean                         12.6 ns         12.0 ns           20 bytes_per_second=19.8711Gi/s items_per_second=83.3456M/s time_per_write=12.0283ns
+BM_cfifo_write/writes:1_median                       12.4 ns         11.9 ns           20 bytes_per_second=20.1191Gi/s items_per_second=84.3857M/s time_per_write=11.8508ns
+BM_cfifo_write/writes:1_stddev                       1.09 ns        0.626 ns           20 bytes_per_second=1.00714Gi/s items_per_second=4.22426M/s time_per_write=625.57ps
+BM_cfifo_write/writes:1_cv                           8.64 %          5.20 %            20 bytes_per_second=5.07% items_per_second=5.07% time_per_write=5.20%
+BM_cfifo_write/writes:10_mean                         133 ns          126 ns           20 bytes_per_second=18.9214Gi/s items_per_second=79.3621M/s time_per_write=12.6165ns
+BM_cfifo_write/writes:10_median                       129 ns          124 ns           20 bytes_per_second=19.2194Gi/s items_per_second=80.6121M/s time_per_write=12.4051ns
+BM_cfifo_write/writes:10_stddev                      10.4 ns         4.67 ns           20 bytes_per_second=700.352Mi/s items_per_second=2.86864M/s time_per_write=467.468ps
+BM_cfifo_write/writes:10_cv                          7.81 %          3.71 %            20 bytes_per_second=3.61% items_per_second=3.61% time_per_write=3.71%
+BM_cfifo_write/writes:100_mean                       1239 ns         1208 ns           20 bytes_per_second=19.7475Gi/s items_per_second=82.827M/s time_per_write=12.0821ns
+BM_cfifo_write/writes:100_median                     1237 ns         1212 ns           20 bytes_per_second=19.676Gi/s items_per_second=82.5273M/s time_per_write=12.1172ns
+BM_cfifo_write/writes:100_stddev                     54.0 ns         33.7 ns           20 bytes_per_second=553.232Mi/s items_per_second=2.26604M/s time_per_write=336.594ps
+BM_cfifo_write/writes:100_cv                         4.36 %          2.79 %            20 bytes_per_second=2.74% items_per_second=2.74% time_per_write=2.79%
+BM_cfifo_write/writes:4_mean                         53.5 ns         50.4 ns           20 bytes_per_second=18.9634Gi/s items_per_second=79.5381M/s time_per_write=12.6026ns
+BM_cfifo_write/writes:4_median                       50.6 ns         49.6 ns           20 bytes_per_second=19.2139Gi/s items_per_second=80.5891M/s time_per_write=12.4086ns
+BM_cfifo_write/writes:4_stddev                       5.73 ns         2.58 ns           20 bytes_per_second=953.17Mi/s items_per_second=3.90418M/s time_per_write=644.317ps
+BM_cfifo_write/writes:4_cv                          10.71 %          5.11 %            20 bytes_per_second=4.91% items_per_second=4.91% time_per_write=5.11%
+BM_cfifo_write/writes:4096_mean                     54768 ns        53339 ns           20 bytes_per_second=18.3779Gi/s items_per_second=77.0823M/s time_per_write=13.0222ns
+BM_cfifo_write/writes:4096_median                   55855 ns        52957 ns           20 bytes_per_second=18.4546Gi/s items_per_second=77.4044M/s time_per_write=12.9288ns
+BM_cfifo_write/writes:4096_stddev                    4470 ns         3361 ns           20 bytes_per_second=1.15608Gi/s items_per_second=4.84896M/s time_per_write=820.544ps
+BM_cfifo_write/writes:4096_cv                        8.16 %          6.30 %            20 bytes_per_second=6.29% items_per_second=6.29% time_per_write=6.30%
+BM_cfifo_write/writes:4194304_mean               61904308 ns     59594954 ns           20 bytes_per_second=16.7838Gi/s items_per_second=70.3964M/s time_per_write=14.2085ns
+BM_cfifo_write/writes:4194304_median             60427023 ns     59772083 ns           20 bytes_per_second=16.7302Gi/s items_per_second=70.1717M/s time_per_write=14.2508ns
+BM_cfifo_write/writes:4194304_stddev              6332574 ns       928596 ns           20 bytes_per_second=267.18Mi/s items_per_second=1.09437M/s time_per_write=221.395ps
+BM_cfifo_write/writes:4194304_cv                    10.23 %          1.56 %            20 bytes_per_second=1.55% items_per_second=1.55% time_per_write=1.56%
+BM_cfifo_write_BigO                                 14.76 N         14.21 N    
+BM_cfifo_write_RMS                                     24 %             4 %    
+BM_cfifo_read/messages:1_mean                        28.4 ns         27.6 ns           20 bytes_per_second=8.65108Gi/s items_per_second=36.2853M/s time_per_write_read=27.6053ns
+BM_cfifo_read/messages:1_median                      28.3 ns         27.8 ns           20 bytes_per_second=8.58816Gi/s items_per_second=36.0214M/s time_per_write_read=27.7613ns
+BM_cfifo_read/messages:1_stddev                      1.62 ns         1.15 ns           20 bytes_per_second=372.453Mi/s items_per_second=1.52557M/s time_per_write_read=1.15033ns
+BM_cfifo_read/messages:1_cv                          5.69 %          4.17 %            20 bytes_per_second=4.20% items_per_second=4.20% time_per_write_read=4.17%
+BM_cfifo_read/messages:10_mean                        302 ns          295 ns           20 bytes_per_second=8.09014Gi/s items_per_second=33.9325M/s time_per_write_read=29.5036ns
+BM_cfifo_read/messages:10_median                      297 ns          294 ns           20 bytes_per_second=8.10902Gi/s items_per_second=34.0117M/s time_per_write_read=29.4017ns
+BM_cfifo_read/messages:10_stddev                     21.5 ns         10.5 ns           20 bytes_per_second=276.462Mi/s items_per_second=1.13239M/s time_per_write_read=1.05212ns
+BM_cfifo_read/messages:10_cv                         7.11 %          3.57 %            20 bytes_per_second=3.34% items_per_second=3.34% time_per_write_read=3.57%
+BM_cfifo_read/messages:100_mean                      2861 ns         2829 ns           20 bytes_per_second=8.4312Gi/s items_per_second=35.363M/s time_per_write_read=28.2887ns
+BM_cfifo_read/messages:100_median                    2846 ns         2835 ns           20 bytes_per_second=8.41016Gi/s items_per_second=35.2748M/s time_per_write_read=28.3489ns
+BM_cfifo_read/messages:100_stddev                    80.5 ns         55.0 ns           20 bytes_per_second=174.038Mi/s items_per_second=712.86k/s time_per_write_read=549.502ps
+BM_cfifo_read/messages:100_cv                        2.81 %          1.94 %            20 bytes_per_second=2.02% items_per_second=2.02% time_per_write_read=1.94%
+BM_cfifo_read/messages:4_mean                         104 ns          104 ns           20 bytes_per_second=9.18986Gi/s items_per_second=38.5451M/s time_per_write_read=25.9518ns
+BM_cfifo_read/messages:4_median                       104 ns          103 ns           20 bytes_per_second=9.22309Gi/s items_per_second=38.6844M/s time_per_write_read=25.8502ns
+BM_cfifo_read/messages:4_stddev                      1.98 ns         1.90 ns           20 bytes_per_second=171.15Mi/s items_per_second=701.029k/s time_per_write_read=474.361ps
+BM_cfifo_read/messages:4_cv                          1.90 %          1.83 %            20 bytes_per_second=1.82% items_per_second=1.82% time_per_write_read=1.83%
